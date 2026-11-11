@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def resolve_data_yaml(data_yaml_path: Path, run_name: str) -> Path:
     """data.yaml içindeki 'path' alanını repo köküne göre mutlak yola çevirip runs/ altına yazar."""
-    if not data_yaml_path.is_Absolute() if hasattr(data_yaml_path, "is_Absolute") else not data_yaml_path.is_absolute():
+    if not data_yaml_path.is_absolute():
         data_yaml_path = (REPO_ROOT / data_yaml_path).resolve()
 
     with open(data_yaml_path, "r", encoding="utf-8") as f:
