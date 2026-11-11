@@ -5,6 +5,7 @@ data/yolo/*
 runs/
 weights/
 mlruns/
+mlflow.db
 *.pt
 *.onnx
 *.engine
