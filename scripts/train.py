@@ -1,4 +1,7 @@
-"""PKU-Market-PCB veri seti üzerinde Ultralytics YOLO eğitimi ve doğrulama (val) scripti."""
+"""PKU-Market-PCB veri seti üzerinde Ultralytics YOLO eğitimi ve doğrulama (val) scripti.
+
+Not: Early stopping varsayılan kapalı (patience=0).
+"""
 
 from __future__ import annotations
 
@@ -114,8 +117,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--patience",
         type=int,
-        default=30,
-        help="Erken durdurma sabrı (varsayılan: 30)",
+        default=0,
+        help="Erken durdurma sabrı — early stopping varsayılan kapalı (varsayılan: 0)",
     )
     parser.add_argument(
         "--name",
