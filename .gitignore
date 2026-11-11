@@ -1,0 +1,19 @@
+# Veri ve büyük çıktılar
+data/raw/*
+data/yolo/*
+!data/README.md
+runs/
+weights/
+mlruns/
+*.pt
+*.onnx
+*.engine
+*_openvino_model/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Gizli
+.env
