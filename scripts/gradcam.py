@@ -1,4 +1,4 @@
-"""Tracera — Tespit bazlı CAM (Grad-CAM, HiResCAM, LayerCAM) ve doğrulama testleri (Pointing Game + Model Randomizasyon).
+"""Tracera — Tespit bazlı CAM (Grad-CAM, HiResCAM, LayerCAM) yerel doğrulama protokolü ve silme (deletion) sadakat testi.
 
 ÖNEMLİ: Yalnızca CPU üzerinde (device='cpu') çalışır; GPU'ya dokunmaz.
 """
@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import copy
 import os
+import random
 
 # GPU kullanımını tamamen devre dışı bırak (arka planda çalışan GPU eğitimine dokunmamak için)
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -28,6 +29,7 @@ from ultralytics.utils.nms import non_max_suppression
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 METHODS: tuple[str, ...] = ("gradcam", "hirescam", "layercam")
+DEFAULT_LAYERS: tuple[int, ...] = (16, 4)
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,7 @@ class GTBox:
 
 
 @dataclass(frozen=True)
-class DetectionItem:
+class SampledTP:
     img_path: Path
     stem: str
     class_id: int
@@ -59,8 +61,22 @@ class DetectionItem:
     conf: float
     xyxy_orig: tuple[float, float, float, float]
     xyxy_lb: tuple[float, float, float, float]
-    matched_gt: GTBox | None
+    matched_gt: GTBox
+    all_gts: list[GTBox]
     iou_with_gt: float
+
+
+@dataclass(frozen=True)
+class GradSupportWindow:
+    lb_x1: int
+    lb_y1: int
+    lb_x2: int
+    lb_y2: int
+    orig_x1: int
+    orig_y1: int
+    orig_x2: int
+    orig_y2: int
+    area_ratio: float
 
 
 def letterbox_image(img_bgr: np.ndarray, imgsz: int) -> LetterboxTransform:
@@ -155,19 +171,59 @@ def compute_iou_single_vs_many(box: tuple[float, float, float, float], boxes: np
     return np.where(union > 0, inter / union, 0.0).astype(np.float32)
 
 
-def compute_cam_from_acts_grads(
+def compute_grad_support_window(
+    grads: torch.Tensor,
+    imgsz: int,
+    lb: LetterboxTransform,
+) -> GradSupportWindow:
+    """Hedef katmanda gradyanın sıfırdan farklı olduğu bölgenin sınırlayıcı kutusunu girdi koordinatlarına taşır."""
+    grad_mag = grads.abs().sum(dim=0).cpu().numpy()  # (H_f, W_f)
+    hf, wf = grad_mag.shape
+    nz_y, nz_x = np.where(grad_mag > 1e-12)
+
+    if len(nz_x) == 0:
+        fx1, fy1, fx2, fy2 = 0, 0, wf, hf
+    else:
+        fx1, fy1 = int(nz_x.min()), int(nz_y.min())
+        fx2, fy2 = int(nz_x.max()) + 1, int(nz_y.max()) + 1
+
+    stride_x = imgsz / float(wf)
+    stride_y = imgsz / float(hf)
+
+    lb_x1 = max(lb.left, min(int(round(fx1 * stride_x)), lb.left + lb.unpad_w - 1))
+    lb_y1 = max(lb.top, min(int(round(fy1 * stride_y)), lb.top + lb.unpad_h - 1))
+    lb_x2 = max(lb_x1 + 1, min(int(round(fx2 * stride_x)), lb.left + lb.unpad_w))
+    lb_y2 = max(lb_y1 + 1, min(int(round(fy2 * stride_y)), lb.top + lb.unpad_h))
+
+    ox1_f, oy1_f, ox2_f, oy2_f = box_lb_to_orig((float(lb_x1), float(lb_y1), float(lb_x2), float(lb_y2)), lb)
+    ox1 = max(0, min(int(round(ox1_f)), lb.orig_w - 1))
+    oy1 = max(0, min(int(round(oy1_f)), lb.orig_h - 1))
+    ox2 = max(ox1 + 1, min(int(round(ox2_f)), lb.orig_w))
+    oy2 = max(oy1 + 1, min(int(round(oy2_f)), lb.orig_h))
+
+    win_area = float((ox2 - ox1) * (oy2 - oy1))
+    img_area = float(lb.orig_w * lb.orig_h)
+    return GradSupportWindow(
+        lb_x1=lb_x1,
+        lb_y1=lb_y1,
+        lb_x2=lb_x2,
+        lb_y2=lb_y2,
+        orig_x1=ox1,
+        orig_y1=oy1,
+        orig_x2=ox2,
+        orig_y2=oy2,
+        area_ratio=win_area / img_area if img_area > 0 else 1.0,
+    )
+
+
+def compute_cam_pair_from_acts_grads(
     acts: torch.Tensor,
     grads: torch.Tensor,
     method: str,
     imgsz: int,
     lb: LetterboxTransform,
-) -> np.ndarray:
-    """Aktivasyon (C, H, W) ve gradyan (C, H, W) tensörlerinden seçilen yönteme göre harita üretir.
-
-    - gradcam  : ReLU( sum_k mean_{i,j}(grad_k) * A_k )
-    - hirescam : ReLU( sum_k (grad_k ⊙ A_k) )
-    - layercam : ReLU( sum_k (ReLU(grad_k) ⊙ A_k) )
-    """
+) -> tuple[np.ndarray, np.ndarray]:
+    """Aktivasyon ve gradyandan hem (imgsz, imgsz) letterbox CAM hem (orig_h, orig_w) orijinal CAM döndürür."""
     if method == "gradcam":
         weights = grads.mean(dim=(1, 2), keepdim=True)
         cam_2d = torch.relu((weights * acts).sum(dim=0)).cpu().numpy()
@@ -178,47 +234,59 @@ def compute_cam_from_acts_grads(
     else:
         raise ValueError(f"Bilinmeyen CAM yöntemi: {method}")
 
-    cam_lb = cv2.resize(cam_2d, (imgsz, imgsz), interpolation=cv2.INTER_LINEAR)
-    return unletterbox_cam(cam_lb, lb)
+    cam_lb = cv2.resize(cam_2d, (imgsz, imgsz), interpolation=cv2.INTER_LINEAR).astype(np.float32)
+    l_min, l_max = float(cam_lb.min()), float(cam_lb.max())
+    if l_max > l_min:
+        cam_lb = (cam_lb - l_min) / (l_max - l_min)
+    else:
+        cam_lb = np.zeros_like(cam_lb, dtype=np.float32)
+
+    cam_orig = unletterbox_cam(cam_lb, lb)
+    return cam_lb, cam_orig
 
 
-class YoloDetectionCAM:
-    """Belirli bir katman üzerinde forward/backward hook ile tespit bazlı Grad-CAM / HiResCAM / LayerCAM üretici."""
+class MultiLayerYoloCAM:
+    """Birden fazla hedef katman (ör. 16 ve 4) üzerinde tek forward/backward ile Grad-CAM/HiResCAM/LayerCAM üretici."""
 
-    def __init__(self, nn_model: nn.Module, layer_idx: int, imgsz: int) -> None:
+    def __init__(self, nn_model: nn.Module, layer_indices: list[int], imgsz: int) -> None:
         self.nn_model = nn_model.to("cpu").eval()
-        self.layer_idx = layer_idx
+        self.layer_indices = sorted(set(layer_indices))
         self.imgsz = imgsz
-        self.activations: torch.Tensor | None = None
-        self.gradients: torch.Tensor | None = None
+        self.activations: dict[int, torch.Tensor] = {}
+        self.gradients: dict[int, torch.Tensor] = {}
+        self._handles: list[object] = []
 
-        # Yalnızca hedef katman ve sonrasındaki parametrelerde gradyanı aktif tut (zincir kuralı gereği yeterli ve hızlı)
+        min_layer = min(self.layer_indices)
         for idx, submod in enumerate(self.nn_model.model):
-            req = idx >= layer_idx
+            req = idx >= min_layer
             for p in submod.parameters():
                 p.requires_grad_(req)
 
-        target_layer = self.nn_model.model[layer_idx]
-        self._fwd_handle = target_layer.register_forward_hook(self._forward_hook)
+        for lid in self.layer_indices:
+            handle = self.nn_model.model[lid].register_forward_hook(self._make_forward_hook(lid))
+            self._handles.append(handle)
 
-    def _forward_hook(self, module: nn.Module, inputs: object, output: torch.Tensor) -> torch.Tensor:
-        out_t = output[0] if isinstance(output, (tuple, list)) else output
-        if not out_t.requires_grad:
-            out_t = out_t.detach().requires_grad_(True)
-        self.activations = out_t
+    def _make_forward_hook(self, lid: int):
+        def _hook(module: nn.Module, inputs: object, output: torch.Tensor) -> torch.Tensor:
+            out_t = output[0] if isinstance(output, (tuple, list)) else output
+            if not out_t.requires_grad:
+                out_t = out_t.detach().requires_grad_(True)
+            self.activations[lid] = out_t
 
-        def _grad_hook(grad: torch.Tensor) -> None:
-            self.gradients = grad.detach()
+            def _grad_hook(grad: torch.Tensor) -> None:
+                self.gradients[lid] = grad.detach()
 
-        out_t.register_hook(_grad_hook)
-        return out_t
+            out_t.register_hook(_grad_hook)
+            return out_t
+
+        return _hook
 
     def forward_image(self, x: torch.Tensor) -> tuple[torch.Tensor, np.ndarray]:
         """Görüntüyü ileri besler; ham çıktıyı (1, 4+nc, N) ve (N, 4) xyxy letterbox anchor kutularını döndürür."""
-        self.activations = None
-        self.gradients = None
-        raw_out = self.nn_model(x)[0]  # (1, 4+nc, N)
-        xywh = raw_out[0, :4, :].detach().cpu().numpy().T  # (N, 4)
+        self.activations.clear()
+        self.gradients.clear()
+        raw_out = self.nn_model(x)[0]
+        xywh = raw_out[0, :4, :].detach().cpu().numpy().T
         x1 = xywh[:, 0] - xywh[:, 2] / 2.0
         y1 = xywh[:, 1] - xywh[:, 3] / 2.0
         x2 = xywh[:, 0] + xywh[:, 2] / 2.0
@@ -227,7 +295,6 @@ class YoloDetectionCAM:
         return raw_out, anchor_xyxy
 
     def find_best_anchor(self, target_xyxy_lb: tuple[float, float, float, float], anchor_xyxy: np.ndarray) -> int:
-        """Hedef kutu ile IoU'su en yüksek olan NMS öncesi anchor indeksini bulur."""
         ious = compute_iou_single_vs_many(target_xyxy_lb, anchor_xyxy)
         max_iou = float(ious.max()) if len(ious) > 0 else 0.0
         if max_iou > 0.0:
@@ -239,39 +306,47 @@ class YoloDetectionCAM:
         dist2 = (acx - tcx) ** 2 + (acy - tcy) ** 2
         return int(np.argmin(dist2))
 
-    def compute_cams_for_anchor(
+    def backward_and_extract(
         self,
         raw_out: torch.Tensor,
         anchor_idx: int,
         class_id: int,
         lb: LetterboxTransform,
-        methods: tuple[str, ...] = METHODS,
-    ) -> dict[str, np.ndarray]:
-        """Tek bir backward geçişiyle istenen tüm CAM yöntemlerinin (gradcam, hirescam, layercam) haritalarını üretir."""
+    ) -> dict[int, tuple[GradSupportWindow, dict[str, tuple[np.ndarray, np.ndarray]]]]:
+        """Tek backward geçişiyle tüm kayıtlı katmanlar için (GradSupportWindow, {method: (cam_lb, cam_orig)}) döndürür."""
         self.nn_model.zero_grad(set_to_none=True)
-        self.gradients = None
+        self.gradients.clear()
 
         target_score = raw_out[0, 4 + class_id, anchor_idx]
         target_score.backward(retain_graph=True)
 
-        if self.activations is None or self.gradients is None:
-            raise RuntimeError("CAM aktivasyon veya gradyan yakalanamadı.")
-
-        acts = self.activations.detach()[0]  # (C, H, W)
-        grads = self.gradients.detach()[0]   # (C, H, W)
-
-        return {
-            m: compute_cam_from_acts_grads(acts, grads, method=m, imgsz=self.imgsz, lb=lb)
-            for m in methods
-        }
+        result: dict[int, tuple[GradSupportWindow, dict[str, tuple[np.ndarray, np.ndarray]]]] = {}
+        for lid in self.layer_indices:
+            acts = self.activations[lid].detach()[0]
+            grads = self.gradients[lid].detach()[0]
+            win = compute_grad_support_window(grads, imgsz=self.imgsz, lb=lb)
+            cams = {
+                m: compute_cam_pair_from_acts_grads(acts, grads, method=m, imgsz=self.imgsz, lb=lb)
+                for m in METHODS
+            }
+            result[lid] = (win, cams)
+        return result
 
     def close(self) -> None:
-        self._fwd_handle.remove()
+        for h in self._handles:
+            h.remove()  # type: ignore[attr-defined]
 
 
 def build_randomized_model(trained_nn_model: nn.Module, seed: int = 42) -> nn.Module:
     """Adebayo vd. (2018) model randomizasyon testi için aynı mimarinin ağırlıklarını rastgele başlatır."""
     rand_model = copy.deepcopy(trained_nn_model).to("cpu").eval()
+    # deepcopy sırasında kaynak modelden kopyalanmış olabilecek tüm hook'ları temizle
+    for m in rand_model.modules():
+        m._forward_hooks.clear()
+        m._forward_pre_hooks.clear()
+        m._backward_hooks.clear()
+        m._backward_pre_hooks.clear()
+
     gen = torch.Generator(device="cpu")
     gen.manual_seed(seed)
 
@@ -294,7 +369,6 @@ def build_randomized_model(trained_nn_model: nn.Module, seed: int = 42) -> nn.Mo
 
 
 def load_gt_boxes(lbl_path: Path, lb: LetterboxTransform, class_names: dict[int, str]) -> list[GTBox]:
-    """YOLO .txt etiket dosyasını okur ve orijinal + letterbox koordinatlarında GTBox listesi döndürür."""
     if not lbl_path.is_file():
         return []
     gts: list[GTBox] = []
@@ -321,149 +395,195 @@ def load_gt_boxes(lbl_path: Path, lb: LetterboxTransform, class_names: dict[int,
     return gts
 
 
-def make_overlay_and_zoom(
-    img_bgr: np.ndarray,
+def compute_spearman_safe(a: np.ndarray, b: np.ndarray, max_side: int = 160) -> float:
+    """İki 2B harita arasındaki Spearman sıra korelasyonunu güvenli ve hızlı şekilde hesaplar."""
+    h, w = a.shape[:2]
+    if h > max_side or w > max_side:
+        nh = min(max_side, max(1, h))
+        nw = min(max_side, max(1, w))
+        a_flat = cv2.resize(a, (nw, nh), interpolation=cv2.INTER_AREA).ravel()
+        b_flat = cv2.resize(b, (nw, nh), interpolation=cv2.INTER_AREA).ravel()
+    else:
+        a_flat = a.ravel()
+        b_flat = b.ravel()
+
+    if len(a_flat) < 2 or np.std(a_flat) < 1e-8 or np.std(b_flat) < 1e-8:
+        return 0.0
+    res = spearmanr(a_flat, b_flat)
+    val = float(res.statistic)
+    return 0.0 if np.isnan(val) else val
+
+
+def compute_window_energy_in_gt(
     cam_orig: np.ndarray,
-    box_orig: tuple[float, float, float, float],
-    label_str: str,
-    box_color_rgb: tuple[int, int, int] = (0, 255, 100),
-    extra_gt_box: tuple[float, float, float, float] | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Tam görüntü overlay ve kutu çevresi zoom görüntüsünü RGB olarak döndürür."""
+    win: GradSupportWindow,
+    gt_box_orig: tuple[float, float, float, float],
+) -> tuple[float, float]:
+    """Pencere içinde harita enerjisinin GT kutusuna düşen oranını ve düzgün harita taban oranını (alan oranı) döndürür."""
+    wx1, wy1, wx2, wy2 = win.orig_x1, win.orig_y1, win.orig_x2, win.orig_y2
+    gx1, gy1, gx2, gy2 = gt_box_orig
+
+    ix1 = max(wx1, int(round(gx1)))
+    iy1 = max(wy1, int(round(gy1)))
+    ix2 = min(wx2, int(round(gx2)))
+    iy2 = min(wy2, int(round(gy2)))
+
+    win_slice = cam_orig[wy1:wy2, wx1:wx2]
+    total_energy = float(win_slice.sum())
+    win_area = float(max(1, (wx2 - wx1) * (wy2 - wy1)))
+    inter_area = float(max(0, ix2 - ix1) * max(0, iy2 - iy1))
+    base_ratio = inter_area / win_area
+
+    if ix2 <= ix1 or iy2 <= iy1 or total_energy <= 1e-8:
+        return 0.0, base_ratio
+
+    box_energy = float(cam_orig[iy1:iy2, ix1:ix2].sum())
+    return box_energy / total_energy, base_ratio
+
+
+def run_deletion_test_for_layer(
+    eval_model: nn.Module,
+    img_lb: np.ndarray,
+    blurred_lb: np.ndarray,
+    win: GradSupportWindow,
+    cams_lb_by_method: dict[str, np.ndarray],
+    anchor_idx: int,
+    class_id: int,
+    orig_score: float,
+    rng: np.random.Generator,
+    n_rand_repeats: int = 5,
+) -> tuple[dict[str, float], float]:
+    """Pencere içinde her yöntemin en yüksek %20 piksellerini (ve kontrol olarak 5 kez rastgele %20 pikseli)
+    Gaussian bulanıklaştırılmış (sigma=5) karşılıklarıyla değiştirip aynı anchor skorundaki düşüşü ölçer."""
+    x1, y1, x2, y2 = win.lb_x1, win.lb_y1, win.lb_x2, win.lb_y2
+    wh = max(1, y2 - y1)
+    ww = max(1, x2 - x1)
+    n_win_pixels = wh * ww
+    k_top = max(1, int(round(0.20 * n_win_pixels)))
+
+    orig_patch = img_lb[y1:y2, x1:x2]
+    blur_patch = blurred_lb[y1:y2, x1:x2]
+
+    perturbed_tensors: list[torch.Tensor] = []
+    method_order = list(METHODS)
+
+    # 1. Üç yöntemin en yüksek %20'lik pikselleri bulanıklaştırılmış görüntüler
+    for m_name in method_order:
+        cam_patch_flat = cams_lb_by_method[m_name][y1:y2, x1:x2].ravel()
+        top_idx = np.argpartition(cam_patch_flat, -k_top)[-k_top:]
+        mask_2d = np.zeros(n_win_pixels, dtype=bool)
+        mask_2d[top_idx] = True
+        mask_2d = mask_2d.reshape(wh, ww, 1)
+
+        img_mod = img_lb.copy()
+        img_mod[y1:y2, x1:x2] = np.where(mask_2d, blur_patch, orig_patch)
+        t_mod = torch.from_numpy(img_mod[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
+        perturbed_tensors.append(t_mod)
+
+    # 2. Kontrol: pencere içinde aynı sayıda (k_top) rastgele piksel (5 tekrar)
+    for _ in range(n_rand_repeats):
+        rand_idx = rng.choice(n_win_pixels, size=k_top, replace=False)
+        mask_2d = np.zeros(n_win_pixels, dtype=bool)
+        mask_2d[rand_idx] = True
+        mask_2d = mask_2d.reshape(wh, ww, 1)
+
+        img_mod = img_lb.copy()
+        img_mod[y1:y2, x1:x2] = np.where(mask_2d, blur_patch, orig_patch)
+        t_mod = torch.from_numpy(img_mod[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
+        perturbed_tensors.append(t_mod)
+
+    batch_tensor = torch.stack(perturbed_tensors, dim=0)  # (3 + n_rand_repeats, 3, imgsz, imgsz)
+    with torch.inference_mode():
+        batch_out = eval_model(batch_tensor)[0]  # (B, 4+nc, N)
+        scores = batch_out[:, 4 + class_id, anchor_idx].cpu().numpy()
+
+    drops_by_method: dict[str, float] = {}
+    for i, m_name in enumerate(method_order):
+        drops_by_method[m_name] = float(orig_score - float(scores[i]))
+
+    rand_scores = scores[len(method_order) :]
+    mean_rand_drop = float(np.mean(orig_score - rand_scores))
+    return drops_by_method, mean_rand_drop
+
+
+def save_six_maps_comparison(
+    img_bgr: np.ndarray,
+    sample: SampledTP,
+    layer_results: dict[int, tuple[GradSupportWindow, dict[str, tuple[np.ndarray, np.ndarray]]]],
+    save_path: Path,
+) -> None:
+    """Bir örnek doğru tespit için 2 katman (16 ve 4) × 3 yöntem (Grad-CAM, HiResCAM, LayerCAM) = 6 haritayı yan yana çizer."""
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     h, w = img_rgb.shape[:2]
 
-    heatmap_bgr = cv2.applyColorMap(np.uint8(255.0 * cam_orig), cv2.COLORMAP_JET)
-    heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
-    overlay = np.uint8(0.58 * img_rgb + 0.42 * heatmap_rgb)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11.5))
+    layers_sorted = [16, 4] if (16 in layer_results and 4 in layer_results) else sorted(layer_results.keys())
 
-    max_y, max_x = np.unravel_index(int(np.argmax(cam_orig)), cam_orig.shape)
-    cv2.drawMarker(
-        overlay,
-        (int(max_x), int(max_y)),
-        (255, 255, 255),
-        markerType=cv2.MARKER_CROSS,
-        markerSize=30,
-        thickness=3,
+    for row_idx, lid in enumerate(layers_sorted[:2]):
+        win, cams_dict = layer_results[lid]
+        for col_idx, m_name in enumerate(METHODS):
+            _, cam_orig = cams_dict[m_name]
+            heatmap_bgr = cv2.applyColorMap(np.uint8(255.0 * cam_orig), cv2.COLORMAP_JET)
+            heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
+            overlay = np.uint8(0.55 * img_rgb + 0.45 * heatmap_rgb)
+
+            # Gradyan destek penceresi (beyaz çerçeve)
+            cv2.rectangle(
+                overlay,
+                (win.orig_x1, win.orig_y1),
+                (win.orig_x2, win.orig_y2),
+                (255, 255, 255),
+                thickness=4,
+            )
+
+            # GT kutusu
+            gx1, gy1, gx2, gy2 = map(int, sample.matched_gt.xyxy_orig)
+            cv2.rectangle(overlay, (gx1, gy1), (gx2, gy2), (40, 240, 80), thickness=4)
+
+            # Maksimum nokta
+            my, mx = np.unravel_index(int(np.argmax(cam_orig)), cam_orig.shape)
+            cv2.drawMarker(
+                overlay,
+                (int(mx), int(my)),
+                (255, 255, 255),
+                markerType=cv2.MARKER_CROSS,
+                markerSize=24,
+                thickness=3,
+            )
+
+            # Kutu ve Katman 16 penceresini net gösteren yakınlaştırılmış görünüm (±260 px)
+            cx, cy = (gx1 + gx2) // 2, (gy1 + gy2) // 2
+            half_c = 260
+            zx1, zy1 = max(0, cx - half_c), max(0, cy - half_c)
+            zx2, zy2 = min(w, cx + half_c), min(h, cy + half_c)
+            zoom_view = overlay[zy1:zy2, zx1:zx2]
+
+            e_ratio, b_ratio = compute_window_energy_in_gt(cam_orig, win, sample.matched_gt.xyxy_orig)
+            ax = axes[row_idx, col_idx]
+            ax.imshow(zoom_view)
+            ax.set_title(
+                f"Katman {lid} | {m_name.upper()}\n"
+                f"Pencere={win.area_ratio*100:.2f}% | Kutuda enerji={e_ratio*100:.1f}% (taban={b_ratio*100:.2f}%)",
+                fontsize=10.5,
+                fontweight="bold",
+            )
+            ax.axis("off")
+
+    plt.suptitle(
+        f"6 Harita Karşılaştırması (Katman 16 vs Katman 4 × 3 Yöntem) — {sample.stem} ({sample.class_name}, conf={sample.conf:.2f})\n"
+        f"[Yeşil kutu: GT/Tespit | Beyaz çerçeve: Eğitilmiş model gradyan destek penceresi]",
+        fontsize=13,
+        fontweight="bold",
     )
-
-    if extra_gt_box is not None:
-        gx1, gy1, gx2, gy2 = map(int, extra_gt_box)
-        cv2.rectangle(overlay, (gx1, gy1), (gx2, gy2), (0, 220, 255), thickness=4)
-
-    x1, y1, x2, y2 = map(int, box_orig)
-    cv2.rectangle(overlay, (x1, y1), (x2, y2), box_color_rgb, thickness=5)
-    cv2.putText(
-        overlay,
-        label_str,
-        (max(10, x1), max(38, y1 - 12)),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        1.1,
-        box_color_rgb,
-        3,
-        cv2.LINE_AA,
-    )
-
-    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-    half_crop = max(180, int(max(x2 - x1, y2 - y1) * 2.5))
-    zx1 = max(0, cx - half_crop)
-    zy1 = max(0, cy - half_crop)
-    zx2 = min(w, cx + half_crop)
-    zy2 = min(h, cy + half_crop)
-    zoom_crop = overlay[zy1:zy2, zx1:zx2]
-    return overlay, zoom_crop
-
-
-def render_single_method_panel(
-    img_bgr: np.ndarray,
-    cam_orig: np.ndarray,
-    box_orig: tuple[float, float, float, float],
-    title_str: str,
-    label_str: str,
-    box_color_rgb: tuple[int, int, int] = (0, 255, 100),
-    extra_gt_box: tuple[float, float, float, float] | None = None,
-) -> np.ndarray:
-    """Tek bir yöntem için tam PCB + yakınlaştırılmış bölge panelini üretir."""
-    overlay, zoom_crop = make_overlay_and_zoom(
-        img_bgr=img_bgr,
-        cam_orig=cam_orig,
-        box_orig=box_orig,
-        label_str=label_str,
-        box_color_rgb=box_color_rgb,
-        extra_gt_box=extra_gt_box,
-    )
-    fig, axes = plt.subplots(1, 2, figsize=(13, 6), gridspec_kw={"width_ratios": [1.35, 1.0]})
-    axes[0].imshow(overlay)
-    axes[0].set_title(f"{title_str}\n(Beyaz artı: harita maksimumu)", fontsize=11, fontweight="bold")
-    axes[0].axis("off")
-
-    axes[1].imshow(zoom_crop)
-    axes[1].set_title(f"Yakınlaştırılmış Bölge ({label_str})", fontsize=11, fontweight="bold")
-    axes[1].axis("off")
-
     plt.tight_layout()
-    fig.canvas.draw()
-    buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
+    plt.savefig(save_path, dpi=130, bbox_inches="tight")
     plt.close(fig)
-    return buf
-
-
-def render_three_method_compare_panel(
-    img_bgr: np.ndarray,
-    cams_by_method: dict[str, np.ndarray],
-    box_orig: tuple[float, float, float, float],
-    header_str: str,
-    label_str: str,
-    box_color_rgb: tuple[int, int, int] = (0, 255, 100),
-    extra_gt_box: tuple[float, float, float, float] | None = None,
-) -> np.ndarray:
-    """Üç yöntemi (Grad-CAM, HiResCAM, LayerCAM) aynı tespit için yan yana (üst: tam kart, alt: zoom) çizer."""
-    method_titles = {
-        "gradcam": "Grad-CAM (Uzamsal Ortalama Ağırlık)",
-        "hirescam": "HiResCAM (grad ⊙ A, Eleman Bazlı)",
-        "layercam": "LayerCAM (ReLU(grad) ⊙ A)",
-    }
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10.5), gridspec_kw={"height_ratios": [1.15, 1.0]})
-
-    for col_idx, m_name in enumerate(METHODS):
-        cam = cams_by_method[m_name]
-        overlay, zoom_crop = make_overlay_and_zoom(
-            img_bgr=img_bgr,
-            cam_orig=cam,
-            box_orig=box_orig,
-            label_str=label_str,
-            box_color_rgb=box_color_rgb,
-            extra_gt_box=extra_gt_box,
-        )
-        max_y, max_x = np.unravel_index(int(np.argmax(cam)), cam.shape)
-        bx1, by1, bx2, by2 = box_orig
-        in_box = bx1 <= max_x <= bx2 and by1 <= max_y <= by2
-        hit_tag = "Макс: KUTU İÇİNDE" if in_box else "Maks: Kutu Dışında"
-
-        axes[0, col_idx].imshow(overlay)
-        axes[0, col_idx].set_title(f"{method_titles[m_name]}\n[{hit_tag}]", fontsize=11, fontweight="bold")
-        axes[0, col_idx].axis("off")
-
-        axes[1, col_idx].imshow(zoom_crop)
-        axes[1, col_idx].set_title(f"{m_name} — Yakınlaştırılmış ({label_str})", fontsize=10)
-        axes[1, col_idx].axis("off")
-
-    plt.suptitle(header_str, fontsize=13, fontweight="bold")
-    plt.tight_layout()
-    fig.canvas.draw()
-    buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
-    plt.close(fig)
-    return buf
-
-
-def save_rgb_image(rgb: np.ndarray, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(path), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tracera Tespit Bazlı Grad-CAM / HiResCAM / LayerCAM ve Doğrulama Testleri [CPU]"
+        description="Tracera Yerel CAM Doğrulama Protokolü (Pencere İçi Randomizasyon, Enerji Oranı, Silme Testi) [CPU]"
     )
     parser.add_argument(
         "--weights",
@@ -495,13 +615,26 @@ def parse_args() -> argparse.Namespace:
         type=str,
         choices=["gradcam", "hirescam", "layercam"],
         default="hirescam",
-        help="Birincil CAM yöntemi: gradcam, hirescam veya layercam (varsayılan: hirescam)",
+        help="Birincil CAM yöntemi (varsayılan: hirescam)",
     )
     parser.add_argument(
         "--layer",
         type=int,
-        default=None,
-        help="Hedef katman indeksi (varsayılan: Detect.f listesinin ilk elemanı, P3/stride 8)",
+        nargs="+",
+        default=[16, 4],
+        help="Değerlendirilecek hedef katman(lar) (varsayılan: 16 4)",
+    )
+    parser.add_argument(
+        "--max-dets",
+        type=int,
+        default=150,
+        help="Rastgele örneklenecek maksimum doğru tespit sayısı (seed 42; varsayılan: 150)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Rastgelelik tohumu (varsayılan: 42)",
     )
     parser.add_argument(
         "--conf",
@@ -543,10 +676,12 @@ def main() -> None:
 
     yolo_obj = YOLO(str(weights_path))
     trained_nn = copy.deepcopy(yolo_obj.model).to("cpu").eval()
+    # Silme testi forward geçişleri için hızlandırılmış (fused) kopya
+    eval_nn = copy.deepcopy(yolo_obj.model).fuse().to("cpu").eval()
 
     detect_head = trained_nn.model[-1]
     detect_f: list[int] = list(getattr(detect_head, "f", [16, 19, 22]))
-    target_layer_idx = args.layer if args.layer is not None else int(detect_f[0])
+    target_layers: list[int] = list(args.layer) if isinstance(args.layer, list) else [int(args.layer)]
 
     model_label = (
         weights_path.parent.parent.name
@@ -554,54 +689,152 @@ def main() -> None:
         else weights_path.stem
     )
 
-    print("=" * 84)
-    print(
-        f"TRACERA CAM KARŞILAŞTIRMASI VE SANITY CHECK (CPU) — "
-        f"model={model_label} | imgsz={args.imgsz} | birincil_method={args.method}"
-    )
-    print(f"Detect modülü .f listesi : {detect_f} (P3/P4/P5 girdileri)")
-    print(f"Seçilen hedef katman     : {target_layer_idx} ({type(trained_nn.model[target_layer_idx]).__name__})")
-    print(f"Karşılaştırılan yöntemler: {list(METHODS)}")
-    print(f"Veri bölmesi             : {args.split} ({img_dir})")
-    print("=" * 84)
+    # Katmanların stride ve modül tiplerini doğrula
+    dummy_shapes: dict[int, tuple[int, ...]] = {}
 
-    cam_trained = YoloDetectionCAM(trained_nn, layer_idx=target_layer_idx, imgsz=args.imgsz)
-    rand_nn = build_randomized_model(trained_nn, seed=42)
-    cam_rand = YoloDetectionCAM(rand_nn, layer_idx=target_layer_idx, imgsz=args.imgsz)
+    def _make_shape_hook(l_idx: int):
+        def _shape_hook(mod: nn.Module, inp: object, out: torch.Tensor) -> None:
+            t = out[0] if isinstance(out, (tuple, list)) else out
+            dummy_shapes[l_idx] = tuple(t.shape)
+
+        return _shape_hook
+
+    temp_handles = [trained_nn.model[lid].register_forward_hook(_make_shape_hook(lid)) for lid in target_layers]
+    with torch.no_grad():
+        _ = trained_nn(torch.zeros(1, 3, args.imgsz, args.imgsz))
+    for h in temp_handles:
+        h.remove()
+
+    print("=" * 92)
+    print(
+        f"TRACERA YEREL CAM DOĞRULAMA PROTOKOLÜ + SİLME TESTİ (CPU) — "
+        f"model={model_label} | imgsz={args.imgsz} | max_dets={args.max_dets}"
+    )
+    print(f"Detect modülü .f listesi : {detect_f}")
+    for lid in target_layers:
+        sh = dummy_shapes[lid]
+        stride_val = args.imgsz // sh[-1]
+        print(
+            f"  - Katman {lid:2d} ({type(trained_nn.model[lid]).__name__:<6}): "
+            f"çıktı boyutu={sh} -> stride={stride_val}"
+        )
+    print("=" * 92)
 
     img_paths = sorted(
         [p for p in img_dir.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}],
         key=lambda p: p.name,
     )
 
-    hits_own_box: dict[str, int] = {m: 0 for m in METHODS}
-    hits_any_box: dict[str, int] = {m: 0 for m in METHODS}
-    spearman_corrs: dict[str, list[float]] = {m: [] for m in METHODS}
-    n_tp = 0
-
-    # Görüntü başına şans oranları (kendi kutu alanı / görüntü; tüm GT alanları toplamı / görüntü)
+    # 1. Aşama: Tüm doğru tespitleri (TP, IoU>=0.5) topla ve görüntü başına şans oranlarını hesapla
+    all_tps: list[SampledTP] = []
     img_chance_own_list: list[float] = []
     img_chance_any_list: list[float] = []
 
-    tp_single_panels: dict[int, np.ndarray] = {}
-    fp_candidates: list[tuple[float, np.ndarray, np.ndarray, str]] = []
-    fn_saved_count = 0
+    with torch.inference_mode():
+        for img_path in img_paths:
+            img_bgr = cv2.imread(str(img_path))
+            if img_bgr is None:
+                continue
+            lb = letterbox_image(img_bgr, imgsz=args.imgsz)
+            gts = load_gt_boxes(lbl_dir / f"{img_path.stem}.txt", lb=lb, class_names=class_names)
+            img_area = float(lb.orig_w * lb.orig_h)
+            if gts:
+                gt_areas = [
+                    max(0.0, (g.xyxy_orig[2] - g.xyxy_orig[0]) * (g.xyxy_orig[3] - g.xyxy_orig[1]))
+                    for g in gts
+                ]
+                img_chance_own_list.append(float(np.mean(gt_areas)) / img_area)
+                img_chance_any_list.append(float(np.sum(gt_areas)) / img_area)
 
+            x_t = (
+                torch.from_numpy(lb.img_lb[:, :, ::-1].transpose(2, 0, 1).copy())
+                .float()
+                .unsqueeze(0)
+                / 255.0
+            )
+            raw_pred = eval_nn(x_t)[0]
+            nms_preds = non_max_suppression(raw_pred.clone(), conf_thres=args.conf, iou_thres=args.iou)[0]
+            preds_np = nms_preds.cpu().numpy() if len(nms_preds) > 0 else np.zeros((0, 6), dtype=np.float32)
+
+            matched_gt_indices: set[int] = set()
+            for row in preds_np:
+                px1, py1, px2, py2, conf_val, cls_val = row
+                cls_id = int(cls_val)
+                xyxy_lb = (float(px1), float(py1), float(px2), float(py2))
+                xyxy_orig = box_lb_to_orig(xyxy_lb, lb)
+
+                best_gt: GTBox | None = None
+                best_iou = 0.0
+                best_gt_idx = -1
+                for g_idx, g in enumerate(gts):
+                    if g_idx in matched_gt_indices or g.class_id != cls_id:
+                        continue
+                    iou_val = float(compute_iou_single_vs_many(xyxy_orig, np.asarray([g.xyxy_orig]))[0])
+                    if iou_val >= 0.5 and iou_val > best_iou:
+                        best_iou = iou_val
+                        best_gt = g
+                        best_gt_idx = g_idx
+
+                if best_gt is not None and best_gt_idx >= 0:
+                    matched_gt_indices.add(best_gt_idx)
+                    all_tps.append(
+                        SampledTP(
+                            img_path=img_path,
+                            stem=img_path.stem,
+                            class_id=cls_id,
+                            class_name=class_names.get(cls_id, str(cls_id)),
+                            conf=float(conf_val),
+                            xyxy_orig=xyxy_orig,
+                            xyxy_lb=xyxy_lb,
+                            matched_gt=best_gt,
+                            all_gts=gts,
+                            iou_with_gt=best_iou,
+                        )
+                    )
+
+    total_tp_found = len(all_tps)
+    py_rng = random.Random(args.seed)
+    if args.max_dets > 0 and len(all_tps) > args.max_dets:
+        sampled_tps = py_rng.sample(all_tps, args.max_dets)
+        sampled_tps.sort(key=lambda s: (s.stem, -s.conf))
+    else:
+        sampled_tps = all_tps
+
+    n_eval = len(sampled_tps)
+    print(f"Toplam doğru tespit: {total_tp_found} | Örneklenen tespit (seed={args.seed}): {n_eval}")
+
+    cam_trained = MultiLayerYoloCAM(trained_nn, layer_indices=target_layers, imgsz=args.imgsz)
+    rand_nn = build_randomized_model(trained_nn, seed=args.seed)
+    cam_rand = MultiLayerYoloCAM(rand_nn, layer_indices=target_layers, imgsz=args.imgsz)
+
+    # İstatistik biriktiriciler: key = (lid, method)
+    hits_own_full: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
+    hits_any_full: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
+    spearman_full: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+    spearman_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+    energy_in_gt_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+    base_in_gt_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+    win_area_ratios: dict[int, list[float]] = {l: [] for l in target_layers}
+    del_drops_map: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+    del_drops_rand: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+
+    np_rng = np.random.default_rng(args.seed)
+    six_maps_saved = False
     out_dir = REPO_ROOT / "results" / "gradcam"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for img_path in img_paths:
+    # Aynı görüntüdeki tespitleri gruplayarak görüntü başına yalnızca 1 forward yap
+    by_img: dict[Path, list[SampledTP]] = {}
+    for item in sampled_tps:
+        by_img.setdefault(item.img_path, []).append(item)
+
+    processed = 0
+    for img_path, items in by_img.items():
         img_bgr = cv2.imread(str(img_path))
         if img_bgr is None:
             continue
         lb = letterbox_image(img_bgr, imgsz=args.imgsz)
-        gts = load_gt_boxes(lbl_dir / f"{img_path.stem}.txt", lb=lb, class_names=class_names)
-
-        img_area = float(lb.orig_w * lb.orig_h)
-        if gts:
-            gt_areas = [max(0.0, (g.xyxy_orig[2] - g.xyxy_orig[0]) * (g.xyxy_orig[3] - g.xyxy_orig[1])) for g in gts]
-            img_chance_own_list.append(float(np.mean(gt_areas)) / img_area)
-            img_chance_any_list.append(float(np.sum(gt_areas)) / img_area)
+        blurred_lb = cv2.GaussianBlur(lb.img_lb, ksize=(0, 0), sigmaX=5.0, sigmaY=5.0)
 
         x_tensor = (
             torch.from_numpy(lb.img_lb[:, :, ::-1].transpose(2, 0, 1).copy())
@@ -611,266 +844,150 @@ def main() -> None:
         )
 
         raw_out_tr, anchor_xyxy = cam_trained.forward_image(x_tensor)
-        nms_preds = non_max_suppression(
-            raw_out_tr.detach().clone(),
-            conf_thres=args.conf,
-            iou_thres=args.iou,
-        )[0]
+        raw_out_rn, _ = cam_rand.forward_image(x_tensor)
 
-        preds_np = nms_preds.cpu().numpy() if len(nms_preds) > 0 else np.zeros((0, 6), dtype=np.float32)
+        for sample in items:
+            processed += 1
+            anchor_idx = cam_trained.find_best_anchor(sample.xyxy_lb, anchor_xyxy)
+            orig_score = float(raw_out_tr[0, 4 + sample.class_id, anchor_idx].item())
 
-        matched_gt_indices: set[int] = set()
-        det_items: list[DetectionItem] = []
-
-        for row in preds_np:
-            px1, py1, px2, py2, conf_val, cls_val = row
-            cls_id = int(cls_val)
-            xyxy_lb = (float(px1), float(py1), float(px2), float(py2))
-            xyxy_orig = box_lb_to_orig(xyxy_lb, lb)
-
-            best_gt: GTBox | None = None
-            best_iou = 0.0
-            best_gt_idx = -1
-
-            for g_idx, g in enumerate(gts):
-                if g_idx in matched_gt_indices or g.class_id != cls_id:
-                    continue
-                iou_val = float(compute_iou_single_vs_many(xyxy_orig, np.asarray([g.xyxy_orig]))[0])
-                if iou_val >= 0.5 and iou_val > best_iou:
-                    best_iou = iou_val
-                    best_gt = g
-                    best_gt_idx = g_idx
-
-            if best_gt is not None and best_gt_idx >= 0:
-                matched_gt_indices.add(best_gt_idx)
-
-            det_items.append(
-                DetectionItem(
-                    img_path=img_path,
-                    stem=img_path.stem,
-                    class_id=cls_id,
-                    class_name=class_names.get(cls_id, str(cls_id)),
-                    conf=float(conf_val),
-                    xyxy_orig=xyxy_orig,
-                    xyxy_lb=xyxy_lb,
-                    matched_gt=best_gt,
-                    iou_with_gt=best_iou,
-                )
+            tr_extracted = cam_trained.backward_and_extract(
+                raw_out=raw_out_tr,
+                anchor_idx=anchor_idx,
+                class_id=sample.class_id,
+                lb=lb,
+            )
+            rn_extracted = cam_rand.backward_and_extract(
+                raw_out=raw_out_rn,
+                anchor_idx=anchor_idx,
+                class_id=sample.class_id,
+                lb=lb,
             )
 
-        has_tp = any(d.matched_gt is not None for d in det_items)
-        raw_out_rand: torch.Tensor | None = None
-        if has_tp:
-            raw_out_rand, _ = cam_rand.forward_image(x_tensor)
-
-        for det in det_items:
-            anchor_idx = cam_trained.find_best_anchor(det.xyxy_lb, anchor_xyxy)
-            if det.matched_gt is not None:
-                n_tp += 1
-                cams_tr = cam_trained.compute_cams_for_anchor(
-                    raw_out=raw_out_tr,
-                    anchor_idx=anchor_idx,
-                    class_id=det.class_id,
-                    lb=lb,
-                    methods=METHODS,
+            if not six_maps_saved and len(target_layers) >= 2:
+                save_six_maps_comparison(
+                    img_bgr=img_bgr,
+                    sample=sample,
+                    layer_results=tr_extracted,
+                    save_path=out_dir / "compare_6maps_layers_16_vs_4.png",
                 )
-                assert raw_out_rand is not None
-                cams_rn = cam_rand.compute_cams_for_anchor(
-                    raw_out=raw_out_rand,
+                six_maps_saved = True
+
+            gx1, gy1, gx2, gy2 = sample.matched_gt.xyxy_orig
+
+            for lid in target_layers:
+                win, cams_tr = tr_extracted[lid]
+                _, cams_rn = rn_extracted[lid]
+                win_area_ratios[lid].append(win.area_ratio)
+
+                cams_lb_for_del = {m: cams_tr[m][0] for m in METHODS}
+                drops_m, drop_r = run_deletion_test_for_layer(
+                    eval_model=eval_nn,
+                    img_lb=lb.img_lb,
+                    blurred_lb=blurred_lb,
+                    win=win,
+                    cams_lb_by_method=cams_lb_for_del,
                     anchor_idx=anchor_idx,
-                    class_id=det.class_id,
-                    lb=lb,
-                    methods=METHODS,
+                    class_id=sample.class_id,
+                    orig_score=orig_score,
+                    rng=np_rng,
+                    n_rand_repeats=5,
                 )
 
-                gx1, gy1, gx2, gy2 = det.matched_gt.xyxy_orig
                 for m_name in METHODS:
-                    c_map = cams_tr[m_name]
-                    max_y, max_x = np.unravel_index(int(np.argmax(c_map)), c_map.shape)
+                    _, cam_orig_tr = cams_tr[m_name]
+                    _, cam_orig_rn = cams_rn[m_name]
+
+                    # Eski tüm-görüntü metrikleri
+                    max_y, max_x = np.unravel_index(int(np.argmax(cam_orig_tr)), cam_orig_tr.shape)
                     if gx1 <= max_x <= gx2 and gy1 <= max_y <= gy2:
-                        hits_own_box[m_name] += 1
+                        hits_own_full[(lid, m_name)] += 1
                     if any(
                         g.xyxy_orig[0] <= max_x <= g.xyxy_orig[2] and g.xyxy_orig[1] <= max_y <= g.xyxy_orig[3]
-                        for g in gts
+                        for g in sample.all_gts
                     ):
-                        hits_any_box[m_name] += 1
+                        hits_any_full[(lid, m_name)] += 1
 
-                    c_tr_s = cv2.resize(c_map, (160, 160), interpolation=cv2.INTER_AREA).ravel()
-                    c_rn_s = cv2.resize(cams_rn[m_name], (160, 160), interpolation=cv2.INTER_AREA).ravel()
-                    if np.std(c_tr_s) < 1e-8 or np.std(c_rn_s) < 1e-8:
-                        rho = 0.0
-                    else:
-                        res_sp = spearmanr(c_tr_s, c_rn_s)
-                        rho = float(res_sp.statistic) if not np.isnan(res_sp.statistic) else 0.0
-                    spearman_corrs[m_name].append(rho)
+                    rho_full = compute_spearman_safe(cam_orig_tr, cam_orig_rn, max_side=160)
+                    spearman_full[(lid, m_name)].append(rho_full)
 
-                # Her sınıftan 1 doğru tespit için hem tekil hem 3'lü karşılaştırma görseli
-                if det.class_id not in tp_single_panels:
-                    single_pnl = render_single_method_panel(
-                        img_bgr=img_bgr,
-                        cam_orig=cams_tr[args.method],
-                        box_orig=det.xyxy_orig,
-                        title_str=f"[{args.method.upper()} - TP] {det.stem} | IoU={det.iou_with_gt:.2f}",
-                        label_str=f"{det.class_name} {det.conf:.2f}",
-                        box_color_rgb=(40, 235, 80),
-                        extra_gt_box=det.matched_gt.xyxy_orig,
-                    )
-                    save_rgb_image(single_pnl, out_dir / f"tp_{det.class_id}_{det.class_name}_{det.stem}.png")
-                    tp_single_panels[det.class_id] = single_pnl
+                    # Metrik 1: Pencere içi randomizasyon Spearman
+                    tr_win_slice = cam_orig_tr[win.orig_y1 : win.orig_y2, win.orig_x1 : win.orig_x2]
+                    rn_win_slice = cam_orig_rn[win.orig_y1 : win.orig_y2, win.orig_x1 : win.orig_x2]
+                    rho_win = compute_spearman_safe(tr_win_slice, rn_win_slice, max_side=160)
+                    spearman_win[(lid, m_name)].append(rho_win)
 
-                    cmp_pnl = render_three_method_compare_panel(
-                        img_bgr=img_bgr,
-                        cams_by_method=cams_tr,
-                        box_orig=det.xyxy_orig,
-                        header_str=(
-                            f"[DOĞRU TESPİT - TP] Sınıf: {det.class_name} ({det.stem}, conf={det.conf:.2f}, IoU={det.iou_with_gt:.2f}) "
-                            f"— Grad-CAM vs HiResCAM vs LayerCAM"
-                        ),
-                        label_str=f"{det.class_name} {det.conf:.2f}",
-                        box_color_rgb=(40, 235, 80),
-                        extra_gt_box=det.matched_gt.xyxy_orig,
+                    # Metrik 2: Pencere içi enerji oranı vs düzgün harita tabanı
+                    e_ratio, b_ratio = compute_window_energy_in_gt(
+                        cam_orig_tr,
+                        win=win,
+                        gt_box_orig=sample.matched_gt.xyxy_orig,
                     )
-                    save_rgb_image(cmp_pnl, out_dir / f"compare_tp_{det.class_id}_{det.class_name}_{det.stem}.png")
+                    energy_in_gt_win[(lid, m_name)].append(e_ratio)
+                    base_in_gt_win[(lid, m_name)].append(b_ratio)
 
-            else:
-                if len(fp_candidates) < 2 or det.conf > fp_candidates[-1][0]:
-                    cams_fp = cam_trained.compute_cams_for_anchor(
-                        raw_out=raw_out_tr,
-                        anchor_idx=anchor_idx,
-                        class_id=det.class_id,
-                        lb=lb,
-                        methods=METHODS,
-                    )
-                    single_fp = render_single_method_panel(
-                        img_bgr=img_bgr,
-                        cam_orig=cams_fp[args.method],
-                        box_orig=det.xyxy_orig,
-                        title_str=f"[{args.method.upper()} - FP] {det.stem} (GT karşılığı yok)",
-                        label_str=f"FP: {det.class_name} {det.conf:.2f}",
-                        box_color_rgb=(255, 50, 50),
-                    )
-                    cmp_fp = render_three_method_compare_panel(
-                        img_bgr=img_bgr,
-                        cams_by_method=cams_fp,
-                        box_orig=det.xyxy_orig,
-                        header_str=(
-                            f"[YANLIŞ POZİTİF - FP] {det.stem} (Tahmin: {det.class_name}, conf={det.conf:.2f}) "
-                            f"— Grad-CAM vs HiResCAM vs LayerCAM"
-                        ),
-                        label_str=f"FP: {det.class_name} {det.conf:.2f}",
-                        box_color_rgb=(255, 50, 50),
-                    )
-                    fp_candidates.append((det.conf, single_fp, cmp_fp, f"{det.class_name}_{det.stem}.png"))
-                    fp_candidates.sort(key=lambda x: -x[0])
-                    fp_candidates = fp_candidates[:2]
+                    # Metrik 3: Silme testi skor düşüşleri
+                    del_drops_map[(lid, m_name)].append(drops_m[m_name])
+                    del_drops_rand[(lid, m_name)].append(drop_r)
 
-        if fn_saved_count < 2:
-            for g_idx, g in enumerate(gts):
-                if g_idx in matched_gt_indices:
-                    continue
-                fn_anchor_idx = cam_trained.find_best_anchor(g.xyxy_lb, anchor_xyxy)
-                fn_raw_score = float(raw_out_tr[0, 4 + g.class_id, fn_anchor_idx].item())
-                cams_fn = cam_trained.compute_cams_for_anchor(
-                    raw_out=raw_out_tr,
-                    anchor_idx=fn_anchor_idx,
-                    class_id=g.class_id,
-                    lb=lb,
-                    methods=METHODS,
-                )
-                fn_saved_count += 1
-                single_fn = render_single_method_panel(
-                    img_bgr=img_bgr,
-                    cam_orig=cams_fn[args.method],
-                    box_orig=g.xyxy_orig,
-                    title_str=f"[{args.method.upper()} - FN] {img_path.stem} (En yakın anchor skoru={fn_raw_score:.3f})",
-                    label_str=f"GT (FN): {g.class_name}",
-                    box_color_rgb=(255, 200, 0),
-                )
-                cmp_fn = render_three_method_compare_panel(
-                    img_bgr=img_bgr,
-                    cams_by_method=cams_fn,
-                    box_orig=g.xyxy_orig,
-                    header_str=(
-                        f"[KAÇIRILAN HATA - FN] {img_path.stem} (GT: {g.class_name}, en yakın anchor skoru={fn_raw_score:.3f}) "
-                        f"— Grad-CAM vs HiResCAM vs LayerCAM"
-                    ),
-                    label_str=f"GT (FN): {g.class_name}",
-                    box_color_rgb=(255, 200, 0),
-                )
-                save_rgb_image(single_fn, out_dir / f"fn_{fn_saved_count}_{g.class_name}_{img_path.stem}.png")
-                save_rgb_image(cmp_fn, out_dir / f"compare_fn_{fn_saved_count}_{g.class_name}_{img_path.stem}.png")
-                if fn_saved_count >= 2:
-                    break
+        if processed % 30 == 0 or processed == n_eval:
+            print(f"  İlerleme: {processed}/{n_eval} tespit tamamlandı...")
 
     cam_trained.close()
     cam_rand.close()
 
-    for idx, (_, single_fp, cmp_fp, suffix) in enumerate(fp_candidates, start=1):
-        save_rgb_image(single_fp, out_dir / f"fp_{idx}_{suffix}")
-        save_rgb_image(cmp_fp, out_dir / f"compare_fp_{idx}_{suffix}")
+    chance_own_full = float(np.mean(img_chance_own_list)) if img_chance_own_list else 0.0
+    chance_any_full = float(np.mean(img_chance_any_list)) if img_chance_any_list else 0.0
 
-    if tp_single_panels:
-        fig_tp, axes_tp = plt.subplots(3, 2, figsize=(18, 16))
-        for ax, cls_id in zip(axes_tp.flatten(), sorted(tp_single_panels.keys())):
-            ax.imshow(tp_single_panels[cls_id])
-            ax.axis("off")
-        plt.suptitle(
-            f"{args.method.upper()} Doğru Tespit Örnekleri (6 Sınıf) — {model_label} (katman={target_layer_idx})",
-            fontsize=15,
-            fontweight="bold",
-        )
-        plt.tight_layout()
-        plt.savefig(out_dir / "gradcam_tp_6classes.png", dpi=130, bbox_inches="tight")
-        plt.close(fig_tp)
+    rows: list[dict[str, object]] = []
+    for lid in target_layers:
+        mean_win_area = float(np.mean(win_area_ratios[lid])) if win_area_ratios[lid] else 0.0
+        for m_name in METHODS:
+            key = (lid, m_name)
+            pg_own_f = hits_own_full[key] / n_eval if n_eval > 0 else 0.0
+            pg_any_f = hits_any_full[key] / n_eval if n_eval > 0 else 0.0
+            sp_full_med = float(np.median(spearman_full[key])) if spearman_full[key] else 0.0
+            sp_win_med = float(np.median(spearman_win[key])) if spearman_win[key] else 0.0
+            e_win_mean = float(np.mean(energy_in_gt_win[key])) if energy_in_gt_win[key] else 0.0
+            b_win_mean = float(np.mean(base_in_gt_win[key])) if base_in_gt_win[key] else 0.0
+            d_map_mean = float(np.mean(del_drops_map[key])) if del_drops_map[key] else 0.0
+            d_rnd_mean = float(np.mean(del_drops_rand[key])) if del_drops_rand[key] else 0.0
+            d_ratio = d_map_mean / d_rnd_mean if abs(d_rnd_mean) > 1e-9 else float("nan")
 
-    chance_own = float(np.mean(img_chance_own_list)) if img_chance_own_list else 0.0
-    chance_any = float(np.mean(img_chance_any_list)) if img_chance_any_list else 0.0
+            rows.append(
+                {
+                    "model": model_label,
+                    "imgsz": args.imgsz,
+                    "katman": lid,
+                    "method": m_name,
+                    "n_tespit": n_eval,
+                    "kendi_kutu_tum_goruntu": round(pg_own_f, 4),
+                    "şans_kendi_kutu_tum_goruntu": round(chance_own_full, 6),
+                    "herhangi_kutu_tum_goruntu": round(pg_any_f, 4),
+                    "şans_herhangi_kutu_tum_goruntu": round(chance_any_full, 6),
+                    "randomizasyon_spearman_medyan_tum_goruntu": round(sp_full_med, 4),
+                    "pencere_alan_orani": round(mean_win_area, 4),
+                    "randomizasyon_spearman_medyan_pencere": round(sp_win_med, 4),
+                    "enerji_kutuda_pencere": round(e_win_mean, 4),
+                    "taban_kutu_pencere": round(b_win_mean, 4),
+                    "silme_dusus_harita": round(d_map_mean, 4),
+                    "silme_dusus_rastgele": round(d_rnd_mean, 4),
+                    "silme_oran": round(d_ratio, 2),
+                }
+            )
 
     sanity_csv = REPO_ROOT / "results" / "gradcam_sanity.csv"
-    new_rows: list[dict[str, object]] = []
-    for m_name in METHODS:
-        pg_own = hits_own_box[m_name] / n_tp if n_tp > 0 else 0.0
-        pg_any = hits_any_box[m_name] / n_tp if n_tp > 0 else 0.0
-        sp_med = float(np.median(spearman_corrs[m_name])) if spearman_corrs[m_name] else 0.0
-        new_rows.append(
-            {
-                "model": model_label,
-                "imgsz": args.imgsz,
-                "katman": target_layer_idx,
-                "method": m_name,
-                "n_tespit": n_tp,
-                "kendi_kutu": round(pg_own, 4),
-                "şans_kendi_kutu": round(chance_own, 6),
-                "herhangi_kutu": round(pg_any, 4),
-                "şans_herhangi_kutu": round(chance_any, 6),
-                "randomizasyon_spearman_medyan": round(sp_med, 4),
-            }
-        )
-
-    existing_rows: list[dict[str, object]] = []
-    if sanity_csv.is_file():
-        df_old = pd.read_csv(sanity_csv)
-        if "method" in df_old.columns:
-            new_keys = {(str(r["model"]), int(r["imgsz"]), int(r["katman"]), str(r["method"])) for r in new_rows}
-            existing_rows = [
-                r
-                for r in df_old.to_dict(orient="records")
-                if (str(r.get("model")), int(r.get("imgsz", 0)), int(r.get("katman", -1)), str(r.get("method")))
-                not in new_keys
-            ]
-
-    combined_rows = existing_rows + new_rows
-    df_sanity = pd.DataFrame(combined_rows)
+    df_sanity = pd.DataFrame(rows)
     sanity_csv.parent.mkdir(parents=True, exist_ok=True)
     df_sanity.to_csv(sanity_csv, index=False, encoding="utf-8")
 
-    print("\n" + "=" * 84)
-    print("CAM YÖNTEMLERİ KARŞILAŞTIRMA TABLOSU (Grad-CAM vs HiResCAM vs LayerCAM)")
-    print("=" * 84)
+    print("\n" + "=" * 110)
+    print("YEREL PROTOKOL + SİLME TESTİ SONUÇ TABLOSU (3 Yöntem × 2 Katman = 6 Satır)")
+    print("=" * 110)
     print(df_sanity.to_string(index=False))
-    print("=" * 84)
-    print(f"Kaydedilen compare görselleri : {len(list(out_dir.glob('compare_*.png')))} adet ({out_dir})")
-    print(f"Kaydedilen CSV                : {sanity_csv}")
+    print("=" * 110)
+    print(f"6'lı harita karşılaştırma görseli : {out_dir / 'compare_6maps_layers_16_vs_4.png'}")
+    print(f"Kaydedilen CSV                    : {sanity_csv}")
 
 
 if __name__ == "__main__":
