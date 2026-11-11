@@ -1,4 +1,5 @@
-"""Tracera — Tespit bazlı CAM (Grad-CAM, HiResCAM, LayerCAM) yerel doğrulama protokolü ve silme (deletion) sadakat testi.
+"""Tracera — Tespit bazlı CAM (Grad-CAM, HiResCAM, LayerCAM) yerel doğrulama protokolü ve mutlak bütçeli (1x/2x GT kutu alanı)
+yapısal kaydırmalı silme (deletion) sadakat testi.
 
 ÖNEMLİ: Yalnızca CPU üzerinde (device='cpu') çalışır; GPU'ya dokunmaz.
 """
@@ -29,7 +30,11 @@ from ultralytics.utils.nms import non_max_suppression
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 METHODS: tuple[str, ...] = ("gradcam", "hirescam", "layercam")
-DEFAULT_LAYERS: tuple[int, ...] = (16, 4)
+DELETION_ACTIVE_COMBOS: set[tuple[int, str]] = {
+    (4, "hirescam"),
+    (4, "layercam"),
+    (16, "layercam"),
+}
 
 
 @dataclass(frozen=True)
@@ -282,7 +287,6 @@ class MultiLayerYoloCAM:
         return _hook
 
     def forward_image(self, x: torch.Tensor) -> tuple[torch.Tensor, np.ndarray]:
-        """Görüntüyü ileri besler; ham çıktıyı (1, 4+nc, N) ve (N, 4) xyxy letterbox anchor kutularını döndürür."""
         self.activations.clear()
         self.gradients.clear()
         raw_out = self.nn_model(x)[0]
@@ -313,7 +317,6 @@ class MultiLayerYoloCAM:
         class_id: int,
         lb: LetterboxTransform,
     ) -> dict[int, tuple[GradSupportWindow, dict[str, tuple[np.ndarray, np.ndarray]]]]:
-        """Tek backward geçişiyle tüm kayıtlı katmanlar için (GradSupportWindow, {method: (cam_lb, cam_orig)}) döndürür."""
         self.nn_model.zero_grad(set_to_none=True)
         self.gradients.clear()
 
@@ -340,7 +343,6 @@ class MultiLayerYoloCAM:
 def build_randomized_model(trained_nn_model: nn.Module, seed: int = 42) -> nn.Module:
     """Adebayo vd. (2018) model randomizasyon testi için aynı mimarinin ağırlıklarını rastgele başlatır."""
     rand_model = copy.deepcopy(trained_nn_model).to("cpu").eval()
-    # deepcopy sırasında kaynak modelden kopyalanmış olabilecek tüm hook'ları temizle
     for m in rand_model.modules():
         m._forward_hooks.clear()
         m._forward_pre_hooks.clear()
@@ -396,7 +398,6 @@ def load_gt_boxes(lbl_path: Path, lb: LetterboxTransform, class_names: dict[int,
 
 
 def compute_spearman_safe(a: np.ndarray, b: np.ndarray, max_side: int = 160) -> float:
-    """İki 2B harita arasındaki Spearman sıra korelasyonunu güvenli ve hızlı şekilde hesaplar."""
     h, w = a.shape[:2]
     if h > max_side or w > max_side:
         nh = min(max_side, max(1, h))
@@ -419,7 +420,6 @@ def compute_window_energy_in_gt(
     win: GradSupportWindow,
     gt_box_orig: tuple[float, float, float, float],
 ) -> tuple[float, float]:
-    """Pencere içinde harita enerjisinin GT kutusuna düşen oranını ve düzgün harita taban oranını (alan oranı) döndürür."""
     wx1, wy1, wx2, wy2 = win.orig_x1, win.orig_y1, win.orig_x2, win.orig_y2
     gx1, gy1, gx2, gy2 = gt_box_orig
 
@@ -441,149 +441,130 @@ def compute_window_energy_in_gt(
     return box_energy / total_energy, base_ratio
 
 
-def run_deletion_test_for_layer(
+def shift_binary_mask_within_window(
+    mask_2d: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """2B ikili maskeyi pencere (wh, ww) içinde rastgele kaydırır (tamamen pencere içinde kalacak şekilde).
+
+    Aktif piksellerin sınırlayıcı kutusu pencereden küçükse kesmesiz katı öteleme (rigid translation) uygular;
+    aktif pikseller pencerenin tüm kenarlarına değiyorsa pencere içi dairesel kaydırma (roll) uygular.
+    """
+    wh, ww = mask_2d.shape
+    ys, xs = np.where(mask_2d)
+    if len(ys) == 0:
+        return mask_2d.copy()
+
+    my_min, my_max = int(ys.min()), int(ys.max())
+    mx_min, mx_max = int(xs.min()), int(xs.max())
+
+    dy_min, dy_max = -my_min, (wh - 1) - my_max
+    dx_min, dx_max = -mx_min, (ww - 1) - mx_max
+
+    n_valid = (dy_max - dy_min + 1) * (dx_max - dx_min + 1)
+    if n_valid > 1:
+        while True:
+            dy = int(rng.integers(dy_min, dy_max + 1))
+            dx = int(rng.integers(dx_min, dx_max + 1))
+            if dy != 0 or dx != 0:
+                break
+        shifted = np.zeros_like(mask_2d, dtype=bool)
+        shifted[ys + dy, xs + dx] = True
+        return shifted
+
+    # Aktif pikseller pencerenin uçlarına yayıldığı için katı öteleme alanı yoksa pencere içi sıfırdan farklı kaydırma
+    dy = int(rng.integers(1, max(2, wh))) if wh > 1 else 0
+    dx = int(rng.integers(1, max(2, ww))) if ww > 1 else 0
+    return np.roll(mask_2d, shift=(dy, dx), axis=(0, 1))
+
+
+def evaluate_absolute_budget_deletion(
     eval_model: nn.Module,
     img_lb: np.ndarray,
     blurred_lb: np.ndarray,
     win: GradSupportWindow,
-    cams_lb_by_method: dict[str, np.ndarray],
+    cam_lb: np.ndarray,
+    gt_box_lb: tuple[float, float, float, float],
     anchor_idx: int,
     class_id: int,
     orig_score: float,
     rng: np.random.Generator,
-    n_rand_repeats: int = 5,
-) -> tuple[dict[str, float], float]:
-    """Pencere içinde her yöntemin en yüksek %20 piksellerini (ve kontrol olarak 5 kez rastgele %20 pikseli)
-    Gaussian bulanıklaştırılmış (sigma=5) karşılıklarıyla değiştirip aynı anchor skorundaki düşüşü ölçer."""
+    n_repeats: int = 5,
+) -> dict[str, tuple[float, float]]:
+    """Tek bir (katman, yöntem) için k = 1x ve 2x GT kutu alanı bütçeleriyle:
+    - Haritanın en yüksek k pikseli Gauss sigma=5 ile bulanıklaştırılır -> göreli skor düşüşü (s0 - s1) / s0
+    - Kontrol: aynı ikili maske pencere içinde rastgele kaydırılır (5 tekrar ortalaması) -> göreli skor düşüşü
+    Döndürür: {'1x': (rel_drop_map, rel_drop_ctrl), '2x': (rel_drop_map, rel_drop_ctrl)}
+    """
     x1, y1, x2, y2 = win.lb_x1, win.lb_y1, win.lb_x2, win.lb_y2
     wh = max(1, y2 - y1)
     ww = max(1, x2 - x1)
     n_win_pixels = wh * ww
-    k_top = max(1, int(round(0.20 * n_win_pixels)))
+
+    gx1, gy1, gx2, gy2 = gt_box_lb
+    gt_area_lb = max(1, int(round(max(1.0, gx2 - gx1) * max(1.0, gy2 - gy1))))
+
+    budgets = {
+        "1x": min(n_win_pixels, max(1, gt_area_lb)),
+        "2x": min(n_win_pixels, max(1, 2 * gt_area_lb)),
+    }
 
     orig_patch = img_lb[y1:y2, x1:x2]
     blur_patch = blurred_lb[y1:y2, x1:x2]
+    cam_patch_flat = cam_lb[y1:y2, x1:x2].ravel()
 
     perturbed_tensors: list[torch.Tensor] = []
-    method_order = list(METHODS)
+    budget_keys = ["1x", "2x"]
 
-    # 1. Üç yöntemin en yüksek %20'lik pikselleri bulanıklaştırılmış görüntüler
-    for m_name in method_order:
-        cam_patch_flat = cams_lb_by_method[m_name][y1:y2, x1:x2].ravel()
-        top_idx = np.argpartition(cam_patch_flat, -k_top)[-k_top:]
-        mask_2d = np.zeros(n_win_pixels, dtype=bool)
-        mask_2d[top_idx] = True
-        mask_2d = mask_2d.reshape(wh, ww, 1)
+    for b_key in budget_keys:
+        k_px = budgets[b_key]
+        if k_px >= n_win_pixels:
+            mask_2d = np.ones((wh, ww), dtype=bool)
+        else:
+            top_idx = np.argpartition(cam_patch_flat, -k_px)[-k_px:]
+            mask_flat = np.zeros(n_win_pixels, dtype=bool)
+            mask_flat[top_idx] = True
+            mask_2d = mask_flat.reshape(wh, ww)
 
-        img_mod = img_lb.copy()
-        img_mod[y1:y2, x1:x2] = np.where(mask_2d, blur_patch, orig_patch)
-        t_mod = torch.from_numpy(img_mod[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
-        perturbed_tensors.append(t_mod)
+        # 1. Harita maskesi
+        img_map = img_lb.copy()
+        img_map[y1:y2, x1:x2] = np.where(mask_2d[:, :, None], blur_patch, orig_patch)
+        perturbed_tensors.append(
+            torch.from_numpy(img_map[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
+        )
 
-    # 2. Kontrol: pencere içinde aynı sayıda (k_top) rastgele piksel (5 tekrar)
-    for _ in range(n_rand_repeats):
-        rand_idx = rng.choice(n_win_pixels, size=k_top, replace=False)
-        mask_2d = np.zeros(n_win_pixels, dtype=bool)
-        mask_2d[rand_idx] = True
-        mask_2d = mask_2d.reshape(wh, ww, 1)
+        # 2. Yapısal kontrol: aynı ikili maskenin pencere içinde 5 kez rastgele kaydırılmış hali
+        for _ in range(n_repeats):
+            shifted_2d = shift_binary_mask_within_window(mask_2d, rng=rng)
+            img_ctrl = img_lb.copy()
+            img_ctrl[y1:y2, x1:x2] = np.where(shifted_2d[:, :, None], blur_patch, orig_patch)
+            perturbed_tensors.append(
+                torch.from_numpy(img_ctrl[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
+            )
 
-        img_mod = img_lb.copy()
-        img_mod[y1:y2, x1:x2] = np.where(mask_2d, blur_patch, orig_patch)
-        t_mod = torch.from_numpy(img_mod[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
-        perturbed_tensors.append(t_mod)
-
-    batch_tensor = torch.stack(perturbed_tensors, dim=0)  # (3 + n_rand_repeats, 3, imgsz, imgsz)
+    batch_tensor = torch.stack(perturbed_tensors, dim=0)  # (2 * (1 + n_repeats), 3, imgsz, imgsz)
     with torch.inference_mode():
-        batch_out = eval_model(batch_tensor)[0]  # (B, 4+nc, N)
+        batch_out = eval_model(batch_tensor)[0]
         scores = batch_out[:, 4 + class_id, anchor_idx].cpu().numpy()
 
-    drops_by_method: dict[str, float] = {}
-    for i, m_name in enumerate(method_order):
-        drops_by_method[m_name] = float(orig_score - float(scores[i]))
+    denom = max(abs(orig_score), 1e-8)
+    stride_block = 1 + n_repeats
+    out_dict: dict[str, tuple[float, float]] = {}
 
-    rand_scores = scores[len(method_order) :]
-    mean_rand_drop = float(np.mean(orig_score - rand_scores))
-    return drops_by_method, mean_rand_drop
+    for b_idx, b_key in enumerate(budget_keys):
+        base = b_idx * stride_block
+        s_map = float(scores[base])
+        s_ctrls = scores[base + 1 : base + stride_block]
+        rel_drop_map = float((orig_score - s_map) / denom)
+        rel_drop_ctrl = float(np.mean((orig_score - s_ctrls) / denom))
+        out_dict[b_key] = (rel_drop_map, rel_drop_ctrl)
 
-
-def save_six_maps_comparison(
-    img_bgr: np.ndarray,
-    sample: SampledTP,
-    layer_results: dict[int, tuple[GradSupportWindow, dict[str, tuple[np.ndarray, np.ndarray]]]],
-    save_path: Path,
-) -> None:
-    """Bir örnek doğru tespit için 2 katman (16 ve 4) × 3 yöntem (Grad-CAM, HiResCAM, LayerCAM) = 6 haritayı yan yana çizer."""
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    h, w = img_rgb.shape[:2]
-
-    fig, axes = plt.subplots(2, 3, figsize=(18, 11.5))
-    layers_sorted = [16, 4] if (16 in layer_results and 4 in layer_results) else sorted(layer_results.keys())
-
-    for row_idx, lid in enumerate(layers_sorted[:2]):
-        win, cams_dict = layer_results[lid]
-        for col_idx, m_name in enumerate(METHODS):
-            _, cam_orig = cams_dict[m_name]
-            heatmap_bgr = cv2.applyColorMap(np.uint8(255.0 * cam_orig), cv2.COLORMAP_JET)
-            heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
-            overlay = np.uint8(0.55 * img_rgb + 0.45 * heatmap_rgb)
-
-            # Gradyan destek penceresi (beyaz çerçeve)
-            cv2.rectangle(
-                overlay,
-                (win.orig_x1, win.orig_y1),
-                (win.orig_x2, win.orig_y2),
-                (255, 255, 255),
-                thickness=4,
-            )
-
-            # GT kutusu
-            gx1, gy1, gx2, gy2 = map(int, sample.matched_gt.xyxy_orig)
-            cv2.rectangle(overlay, (gx1, gy1), (gx2, gy2), (40, 240, 80), thickness=4)
-
-            # Maksimum nokta
-            my, mx = np.unravel_index(int(np.argmax(cam_orig)), cam_orig.shape)
-            cv2.drawMarker(
-                overlay,
-                (int(mx), int(my)),
-                (255, 255, 255),
-                markerType=cv2.MARKER_CROSS,
-                markerSize=24,
-                thickness=3,
-            )
-
-            # Kutu ve Katman 16 penceresini net gösteren yakınlaştırılmış görünüm (±260 px)
-            cx, cy = (gx1 + gx2) // 2, (gy1 + gy2) // 2
-            half_c = 260
-            zx1, zy1 = max(0, cx - half_c), max(0, cy - half_c)
-            zx2, zy2 = min(w, cx + half_c), min(h, cy + half_c)
-            zoom_view = overlay[zy1:zy2, zx1:zx2]
-
-            e_ratio, b_ratio = compute_window_energy_in_gt(cam_orig, win, sample.matched_gt.xyxy_orig)
-            ax = axes[row_idx, col_idx]
-            ax.imshow(zoom_view)
-            ax.set_title(
-                f"Katman {lid} | {m_name.upper()}\n"
-                f"Pencere={win.area_ratio*100:.2f}% | Kutuda enerji={e_ratio*100:.1f}% (taban={b_ratio*100:.2f}%)",
-                fontsize=10.5,
-                fontweight="bold",
-            )
-            ax.axis("off")
-
-    plt.suptitle(
-        f"6 Harita Karşılaştırması (Katman 16 vs Katman 4 × 3 Yöntem) — {sample.stem} ({sample.class_name}, conf={sample.conf:.2f})\n"
-        f"[Yeşil kutu: GT/Tespit | Beyaz çerçeve: Eğitilmiş model gradyan destek penceresi]",
-        fontsize=13,
-        fontweight="bold",
-    )
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=130, bbox_inches="tight")
-    plt.close(fig)
+    return out_dict
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tracera Yerel CAM Doğrulama Protokolü (Pencere İçi Randomizasyon, Enerji Oranı, Silme Testi) [CPU]"
+        description="Tracera Yerel CAM Doğrulama Protokolü + Mutlak Bütçeli (1x/2x) Yapısal Silme Testi [CPU]"
     )
     parser.add_argument(
         "--weights",
@@ -614,8 +595,8 @@ def parse_args() -> argparse.Namespace:
         "--method",
         type=str,
         choices=["gradcam", "hirescam", "layercam"],
-        default="hirescam",
-        help="Birincil CAM yöntemi (varsayılan: hirescam)",
+        default="layercam",
+        help="Birincil CAM yöntemi (varsayılan: layercam)",
     )
     parser.add_argument(
         "--layer",
@@ -676,7 +657,6 @@ def main() -> None:
 
     yolo_obj = YOLO(str(weights_path))
     trained_nn = copy.deepcopy(yolo_obj.model).to("cpu").eval()
-    # Silme testi forward geçişleri için hızlandırılmış (fused) kopya
     eval_nn = copy.deepcopy(yolo_obj.model).fuse().to("cpu").eval()
 
     detect_head = trained_nn.model[-1]
@@ -689,43 +669,19 @@ def main() -> None:
         else weights_path.stem
     )
 
-    # Katmanların stride ve modül tiplerini doğrula
-    dummy_shapes: dict[int, tuple[int, ...]] = {}
-
-    def _make_shape_hook(l_idx: int):
-        def _shape_hook(mod: nn.Module, inp: object, out: torch.Tensor) -> None:
-            t = out[0] if isinstance(out, (tuple, list)) else out
-            dummy_shapes[l_idx] = tuple(t.shape)
-
-        return _shape_hook
-
-    temp_handles = [trained_nn.model[lid].register_forward_hook(_make_shape_hook(lid)) for lid in target_layers]
-    with torch.no_grad():
-        _ = trained_nn(torch.zeros(1, 3, args.imgsz, args.imgsz))
-    for h in temp_handles:
-        h.remove()
-
-    print("=" * 92)
+    print("=" * 96)
     print(
-        f"TRACERA YEREL CAM DOĞRULAMA PROTOKOLÜ + SİLME TESTİ (CPU) — "
-        f"model={model_label} | imgsz={args.imgsz} | max_dets={args.max_dets}"
+        f"TRACERA MUTLAK BÜTÇELİ (1x/2x) YAPISAL SİLME TESTİ + RASTGELE MODEL POINTING (CPU)\n"
+        f"model={model_label} | imgsz={args.imgsz} | max_dets={args.max_dets} | aktif_silme={sorted(DELETION_ACTIVE_COMBOS)}"
     )
     print(f"Detect modülü .f listesi : {detect_f}")
-    for lid in target_layers:
-        sh = dummy_shapes[lid]
-        stride_val = args.imgsz // sh[-1]
-        print(
-            f"  - Katman {lid:2d} ({type(trained_nn.model[lid]).__name__:<6}): "
-            f"çıktı boyutu={sh} -> stride={stride_val}"
-        )
-    print("=" * 92)
+    print("=" * 96)
 
     img_paths = sorted(
         [p for p in img_dir.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}],
         key=lambda p: p.name,
     )
 
-    # 1. Aşama: Tüm doğru tespitleri (TP, IoU>=0.5) topla ve görüntü başına şans oranlarını hesapla
     all_tps: list[SampledTP] = []
     img_chance_own_list: list[float] = []
     img_chance_any_list: list[float] = []
@@ -792,7 +748,6 @@ def main() -> None:
                         )
                     )
 
-    total_tp_found = len(all_tps)
     py_rng = random.Random(args.seed)
     if args.max_dets > 0 and len(all_tps) > args.max_dets:
         sampled_tps = py_rng.sample(all_tps, args.max_dets)
@@ -801,29 +756,27 @@ def main() -> None:
         sampled_tps = all_tps
 
     n_eval = len(sampled_tps)
-    print(f"Toplam doğru tespit: {total_tp_found} | Örneklenen tespit (seed={args.seed}): {n_eval}")
+    print(f"Toplam doğru tespit: {len(all_tps)} | Örneklenen tespit (seed={args.seed}): {n_eval}")
 
+    rand_nn = build_randomized_model(yolo_obj.model, seed=args.seed)
     cam_trained = MultiLayerYoloCAM(trained_nn, layer_indices=target_layers, imgsz=args.imgsz)
-    rand_nn = build_randomized_model(trained_nn, seed=args.seed)
     cam_rand = MultiLayerYoloCAM(rand_nn, layer_indices=target_layers, imgsz=args.imgsz)
 
-    # İstatistik biriktiriciler: key = (lid, method)
     hits_own_full: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
     hits_any_full: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
+    hits_own_rand_model: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
     spearman_full: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
     spearman_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
     energy_in_gt_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
     base_in_gt_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
     win_area_ratios: dict[int, list[float]] = {l: [] for l in target_layers}
-    del_drops_map: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
-    del_drops_rand: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+
+    # Göreli silme düşüşleri: key = (lid, method, budget_str) -> list of (rel_drop_map, rel_drop_ctrl)
+    rel_del_records: dict[tuple[int, str, str], list[tuple[float, float]]] = {
+        (l, m, b): [] for (l, m) in DELETION_ACTIVE_COMBOS for b in ("1x", "2x")
+    }
 
     np_rng = np.random.default_rng(args.seed)
-    six_maps_saved = False
-    out_dir = REPO_ROOT / "results" / "gradcam"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Aynı görüntüdeki tespitleri gruplayarak görüntü başına yalnızca 1 forward yap
     by_img: dict[Path, list[SampledTP]] = {}
     for item in sampled_tps:
         by_img.setdefault(item.img_path, []).append(item)
@@ -864,15 +817,6 @@ def main() -> None:
                 lb=lb,
             )
 
-            if not six_maps_saved and len(target_layers) >= 2:
-                save_six_maps_comparison(
-                    img_bgr=img_bgr,
-                    sample=sample,
-                    layer_results=tr_extracted,
-                    save_path=out_dir / "compare_6maps_layers_16_vs_4.png",
-                )
-                six_maps_saved = True
-
             gx1, gy1, gx2, gy2 = sample.matched_gt.xyxy_orig
 
             for lid in target_layers:
@@ -880,25 +824,11 @@ def main() -> None:
                 _, cams_rn = rn_extracted[lid]
                 win_area_ratios[lid].append(win.area_ratio)
 
-                cams_lb_for_del = {m: cams_tr[m][0] for m in METHODS}
-                drops_m, drop_r = run_deletion_test_for_layer(
-                    eval_model=eval_nn,
-                    img_lb=lb.img_lb,
-                    blurred_lb=blurred_lb,
-                    win=win,
-                    cams_lb_by_method=cams_lb_for_del,
-                    anchor_idx=anchor_idx,
-                    class_id=sample.class_id,
-                    orig_score=orig_score,
-                    rng=np_rng,
-                    n_rand_repeats=5,
-                )
-
                 for m_name in METHODS:
-                    _, cam_orig_tr = cams_tr[m_name]
+                    cam_lb_tr, cam_orig_tr = cams_tr[m_name]
                     _, cam_orig_rn = cams_rn[m_name]
 
-                    # Eski tüm-görüntü metrikleri
+                    # Eğitilmiş model pointing game (tüm görüntü)
                     max_y, max_x = np.unravel_index(int(np.argmax(cam_orig_tr)), cam_orig_tr.shape)
                     if gx1 <= max_x <= gx2 and gy1 <= max_y <= gy2:
                         hits_own_full[(lid, m_name)] += 1
@@ -908,16 +838,19 @@ def main() -> None:
                     ):
                         hits_any_full[(lid, m_name)] += 1
 
+                    # Rastgele ağırlıklı model kendi_kutu pointing game (tüm görüntü)
+                    rmax_y, rmax_x = np.unravel_index(int(np.argmax(cam_orig_rn)), cam_orig_rn.shape)
+                    if gx1 <= rmax_x <= gx2 and gy1 <= rmax_y <= gy2:
+                        hits_own_rand_model[(lid, m_name)] += 1
+
                     rho_full = compute_spearman_safe(cam_orig_tr, cam_orig_rn, max_side=160)
                     spearman_full[(lid, m_name)].append(rho_full)
 
-                    # Metrik 1: Pencere içi randomizasyon Spearman
                     tr_win_slice = cam_orig_tr[win.orig_y1 : win.orig_y2, win.orig_x1 : win.orig_x2]
                     rn_win_slice = cam_orig_rn[win.orig_y1 : win.orig_y2, win.orig_x1 : win.orig_x2]
                     rho_win = compute_spearman_safe(tr_win_slice, rn_win_slice, max_side=160)
                     spearman_win[(lid, m_name)].append(rho_win)
 
-                    # Metrik 2: Pencere içi enerji oranı vs düzgün harita tabanı
                     e_ratio, b_ratio = compute_window_energy_in_gt(
                         cam_orig_tr,
                         win=win,
@@ -926,9 +859,23 @@ def main() -> None:
                     energy_in_gt_win[(lid, m_name)].append(e_ratio)
                     base_in_gt_win[(lid, m_name)].append(b_ratio)
 
-                    # Metrik 3: Silme testi skor düşüşleri
-                    del_drops_map[(lid, m_name)].append(drops_m[m_name])
-                    del_drops_rand[(lid, m_name)].append(drop_r)
+                    # Mutlak bütçeli (1x ve 2x GT kutu alanı) yapısal kaydırmalı silme testi
+                    if (lid, m_name) in DELETION_ACTIVE_COMBOS:
+                        del_res = evaluate_absolute_budget_deletion(
+                            eval_model=eval_nn,
+                            img_lb=lb.img_lb,
+                            blurred_lb=blurred_lb,
+                            win=win,
+                            cam_lb=cam_lb_tr,
+                            gt_box_lb=sample.matched_gt.xyxy_lb,
+                            anchor_idx=anchor_idx,
+                            class_id=sample.class_id,
+                            orig_score=orig_score,
+                            rng=np_rng,
+                            n_repeats=5,
+                        )
+                        for b_key in ("1x", "2x"):
+                            rel_del_records[(lid, m_name, b_key)].append(del_res[b_key])
 
         if processed % 30 == 0 or processed == n_eval:
             print(f"  İlerleme: {processed}/{n_eval} tespit tamamlandı...")
@@ -939,6 +886,13 @@ def main() -> None:
     chance_own_full = float(np.mean(img_chance_own_list)) if img_chance_own_list else 0.0
     chance_any_full = float(np.mean(img_chance_any_list)) if img_chance_any_list else 0.0
 
+    sanity_csv = REPO_ROOT / "results" / "gradcam_sanity.csv"
+    prev_map: dict[tuple[int, str], dict[str, object]] = {}
+    if sanity_csv.is_file():
+        df_prev = pd.read_csv(sanity_csv)
+        for r in df_prev.to_dict(orient="records"):
+            prev_map[(int(r.get("katman", -1)), str(r.get("method", "")))] = r
+
     rows: list[dict[str, object]] = []
     for lid in target_layers:
         mean_win_area = float(np.mean(win_area_ratios[lid])) if win_area_ratios[lid] else 0.0
@@ -946,48 +900,103 @@ def main() -> None:
             key = (lid, m_name)
             pg_own_f = hits_own_full[key] / n_eval if n_eval > 0 else 0.0
             pg_any_f = hits_any_full[key] / n_eval if n_eval > 0 else 0.0
+            pg_rand_m = hits_own_rand_model[key] / n_eval if n_eval > 0 else 0.0
             sp_full_med = float(np.median(spearman_full[key])) if spearman_full[key] else 0.0
             sp_win_med = float(np.median(spearman_win[key])) if spearman_win[key] else 0.0
             e_win_mean = float(np.mean(energy_in_gt_win[key])) if energy_in_gt_win[key] else 0.0
             b_win_mean = float(np.mean(base_in_gt_win[key])) if base_in_gt_win[key] else 0.0
-            d_map_mean = float(np.mean(del_drops_map[key])) if del_drops_map[key] else 0.0
-            d_rnd_mean = float(np.mean(del_drops_rand[key])) if del_drops_rand[key] else 0.0
-            d_ratio = d_map_mean / d_rnd_mean if abs(d_rnd_mean) > 1e-9 else float("nan")
 
-            rows.append(
-                {
-                    "model": model_label,
-                    "imgsz": args.imgsz,
-                    "katman": lid,
-                    "method": m_name,
-                    "n_tespit": n_eval,
-                    "kendi_kutu_tum_goruntu": round(pg_own_f, 4),
-                    "şans_kendi_kutu_tum_goruntu": round(chance_own_full, 6),
-                    "herhangi_kutu_tum_goruntu": round(pg_any_f, 4),
-                    "şans_herhangi_kutu_tum_goruntu": round(chance_any_full, 6),
-                    "randomizasyon_spearman_medyan_tum_goruntu": round(sp_full_med, 4),
-                    "pencere_alan_orani": round(mean_win_area, 4),
-                    "randomizasyon_spearman_medyan_pencere": round(sp_win_med, 4),
-                    "enerji_kutuda_pencere": round(e_win_mean, 4),
-                    "taban_kutu_pencere": round(b_win_mean, 4),
-                    "silme_dusus_harita": round(d_map_mean, 4),
-                    "silme_dusus_rastgele": round(d_rnd_mean, 4),
-                    "silme_oran": round(d_ratio, 2),
-                }
-            )
+            row: dict[str, object] = {
+                "model": model_label,
+                "imgsz": args.imgsz,
+                "katman": lid,
+                "method": m_name,
+                "n_tespit": n_eval,
+                "kendi_kutu_tum_goruntu": round(pg_own_f, 4),
+                "pointing_rastgele_model": round(pg_rand_m, 4),
+                "şans_kendi_kutu_tum_goruntu": round(chance_own_full, 6),
+                "herhangi_kutu_tum_goruntu": round(pg_any_f, 4),
+                "şans_herhangi_kutu_tum_goruntu": round(chance_any_full, 6),
+                "randomizasyon_spearman_medyan_tum_goruntu": round(sp_full_med, 4),
+                "pencere_alan_orani": round(mean_win_area, 4),
+                "randomizasyon_spearman_medyan_pencere": round(sp_win_med, 4),
+                "enerji_kutuda_pencere": round(e_win_mean, 4),
+                "taban_kutu_pencere": round(b_win_mean, 4),
+            }
 
-    sanity_csv = REPO_ROOT / "results" / "gradcam_sanity.csv"
+            if key in DELETION_ACTIVE_COMBOS:
+                for b_key in ("1x", "2x"):
+                    recs = rel_del_records[(lid, m_name, b_key)]
+                    map_drops = np.asarray([x[0] for x in recs], dtype=np.float64)
+                    ctrl_drops = np.asarray([x[1] for x in recs], dtype=np.float64)
+                    wins = float(np.mean(map_drops > ctrl_drops)) if len(recs) > 0 else 0.0
+                    mean_m = float(np.mean(map_drops))
+                    mean_c = float(np.mean(ctrl_drops))
+                    med_m = float(np.median(map_drops))
+                    med_c = float(np.median(ctrl_drops))
+                    ratio_mean = mean_m / mean_c if abs(mean_c) > 1e-9 else float("nan")
+
+                    row[f"goreli_dusus_harita_ort_{b_key}"] = round(mean_m, 4)
+                    row[f"goreli_dusus_harita_med_{b_key}"] = round(med_m, 4)
+                    row[f"goreli_dusus_kontrol_ort_{b_key}"] = round(mean_c, 4)
+                    row[f"goreli_dusus_kontrol_med_{b_key}"] = round(med_c, 4)
+                    row[f"goreli_oran_{b_key}"] = round(ratio_mean, 2)
+                    row[f"goreli_kazanma_orani_{b_key}"] = round(wins, 4)
+            else:
+                # Önceki sonuçları koru, yeni 1x/2x sütunlarına NaN yaz
+                old_r = prev_map.get(key, {})
+                for b_key in ("1x", "2x"):
+                    row[f"goreli_dusus_harita_ort_{b_key}"] = old_r.get(f"goreli_dusus_harita_ort_{b_key}", float("nan"))
+                    row[f"goreli_dusus_harita_med_{b_key}"] = old_r.get(f"goreli_dusus_harita_med_{b_key}", float("nan"))
+                    row[f"goreli_dusus_kontrol_ort_{b_key}"] = old_r.get(f"goreli_dusus_kontrol_ort_{b_key}", float("nan"))
+                    row[f"goreli_dusus_kontrol_med_{b_key}"] = old_r.get(f"goreli_dusus_kontrol_med_{b_key}", float("nan"))
+                    row[f"goreli_oran_{b_key}"] = old_r.get(f"goreli_oran_{b_key}", float("nan"))
+                    row[f"goreli_kazanma_orani_{b_key}"] = old_r.get(f"goreli_kazanma_orani_{b_key}", float("nan"))
+
+            rows.append(row)
+
     df_sanity = pd.DataFrame(rows)
     sanity_csv.parent.mkdir(parents=True, exist_ok=True)
     df_sanity.to_csv(sanity_csv, index=False, encoding="utf-8")
 
-    print("\n" + "=" * 110)
-    print("YEREL PROTOKOL + SİLME TESTİ SONUÇ TABLOSU (3 Yöntem × 2 Katman = 6 Satır)")
-    print("=" * 110)
-    print(df_sanity.to_string(index=False))
-    print("=" * 110)
-    print(f"6'lı harita karşılaştırma görseli : {out_dir / 'compare_6maps_layers_16_vs_4.png'}")
-    print(f"Kaydedilen CSV                    : {sanity_csv}")
+    print("\n" + "=" * 120)
+    print("SONUÇ TABLOSU — POINTING GAME (EĞİTİLMİŞ vs RASTGELE MODEL) VE YEREL PENCERE METRİKLERİ")
+    print("=" * 120)
+    cols_part1 = [
+        "katman",
+        "method",
+        "n_tespit",
+        "kendi_kutu_tum_goruntu",
+        "pointing_rastgele_model",
+        "pencere_alan_orani",
+        "randomizasyon_spearman_medyan_pencere",
+        "enerji_kutuda_pencere",
+        "taban_kutu_pencere",
+    ]
+    print(df_sanity[cols_part1].to_string(index=False))
+
+    print("\n" + "=" * 120)
+    print("SONUÇ TABLOSU — MUTLAK BÜTÇELİ (1x ve 2x KUTU ALANI) YAPISAL KAYDIRMALI SİLME TESTİ (GÖRELİ SKOR DÜŞÜŞÜ)")
+    print("=" * 120)
+    cols_part2 = [
+        "katman",
+        "method",
+        "goreli_dusus_harita_ort_1x",
+        "goreli_dusus_harita_med_1x",
+        "goreli_dusus_kontrol_ort_1x",
+        "goreli_dusus_kontrol_med_1x",
+        "goreli_oran_1x",
+        "goreli_kazanma_orani_1x",
+        "goreli_dusus_harita_ort_2x",
+        "goreli_dusus_harita_med_2x",
+        "goreli_dusus_kontrol_ort_2x",
+        "goreli_dusus_kontrol_med_2x",
+        "goreli_oran_2x",
+        "goreli_kazanma_orani_2x",
+    ]
+    print(df_sanity[cols_part2].to_string(index=False))
+    print("=" * 120)
+    print(f"Kaydedilen CSV: {sanity_csv}")
 
 
 if __name__ == "__main__":
