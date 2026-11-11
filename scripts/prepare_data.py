@@ -1,8 +1,9 @@
-"""PKU-Market-PCB veri setini VOC XML formatından YOLO formatına dönüştürür ve rastgele (stratified) böler."""
+"""PKU-Market-PCB veri setini VOC XML formatından YOLO formatına dönüştürür (random veya grouped bölme)."""
 
 from __future__ import annotations
 
 import argparse
+import random
 import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -170,7 +171,7 @@ def collect_samples(src_dir: Path) -> list[Sample]:
     return samples
 
 
-def split_samples(samples: list[Sample], seed: int) -> dict[str, list[Sample]]:
+def split_samples_random(samples: list[Sample], seed: int) -> dict[str, list[Sample]]:
     """%80 train, %10 val, %10 test olacak şekilde sınıfa göre stratified böler."""
     labels = [s.folder_class for s in samples]
     train_list, temp_list = train_test_split(
@@ -194,20 +195,71 @@ def split_samples(samples: list[Sample], seed: int) -> dict[str, list[Sample]]:
     }
 
 
+def split_samples_grouped(samples: list[Sample], seed: int) -> dict[str, list[Sample]]:
+    """Kart numarasına göre sızıntısız bölme: random.Random(seed).shuffle ile sırayla >=%10 test, >=%10 val."""
+    board_counts: dict[str, int] = {}
+    for s in samples:
+        board_counts[s.board_id] = board_counts.get(s.board_id, 0) + 1
+
+    boards = sorted(board_counts.keys())
+    rng = random.Random(seed)
+    rng.shuffle(boards)
+
+    threshold = 0.10 * len(samples)
+
+    test_boards: list[str] = []
+    test_count = 0
+    idx = 0
+    while idx < len(boards) and test_count < threshold:
+        b = boards[idx]
+        test_boards.append(b)
+        test_count += board_counts[b]
+        idx += 1
+
+    val_boards: list[str] = []
+    val_count = 0
+    while idx < len(boards) and val_count < threshold:
+        b = boards[idx]
+        val_boards.append(b)
+        val_count += board_counts[b]
+        idx += 1
+
+    train_boards = sorted(boards[idx:])
+
+    if seed == 42:
+        assert test_boards == ["10", "06"], f"Beklenen test kartları ['10', '06'], bulunan: {test_boards}"
+        assert val_boards == ["05", "11"], f"Beklenen val kartları ['05', '11'], bulunan: {val_boards}"
+        assert train_boards == ["01", "04", "07", "08", "09", "12"], (
+            f"Beklenen train kartları ['01', '04', '07', '08', '09', '12'], bulunan: {train_boards}"
+        )
+
+    set_tr, set_va, set_te = set(train_boards), set(val_boards), set(test_boards)
+    assert set_tr.isdisjoint(set_va), f"train ve val kart kesişimi boş değil: {set_tr & set_va}"
+    assert set_tr.isdisjoint(set_te), f"train ve test kart kesişimi boş değil: {set_tr & set_te}"
+    assert set_va.isdisjoint(set_te), f"val ve test kart kesişimi boş değil: {set_va & set_te}"
+
+    splits: dict[str, list[Sample]] = {
+        "train": sorted([s for s in samples if s.board_id in set_tr], key=lambda s: s.filename),
+        "val": sorted([s for s in samples if s.board_id in set_va], key=lambda s: s.filename),
+        "test": sorted([s for s in samples if s.board_id in set_te], key=lambda s: s.filename),
+    }
+
+    total_grouped = sum(len(v) for v in splits.values())
+    assert total_grouped == 693, f"Grouped toplam 693 olmalı, bulunan: {total_grouped}"
+    return splits
+
+
 def export_yolo_dataset(
     splits: dict[str, list[Sample]],
     out_dir: Path,
-    meta_path: Path,
-) -> pd.DataFrame:
-    """Görüntüleri kopyalar, YOLO etiket dosyalarını ve meta.csv'yi yazar."""
+) -> None:
+    """Seçili şema için görüntüleri kopyalar ve YOLO etiket dosyalarını yazar."""
     for split_name in ("train", "val", "test"):
         split_dir = out_dir / split_name
         if split_dir.exists():
             shutil.rmtree(split_dir)
         (split_dir / "images").mkdir(parents=True, exist_ok=True)
         (split_dir / "labels").mkdir(parents=True, exist_ok=True)
-
-    meta_rows: list[dict[str, object]] = []
 
     for split_name in ("train", "val", "test"):
         img_out_dir = out_dir / split_name / "images"
@@ -224,17 +276,34 @@ def export_yolo_dataset(
             ]
             dst_lbl.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-            meta_rows.append(
-                {
-                    "dosya": sample.filename,
-                    "kart_no": sample.board_id,
-                    "sınıf": sample.folder_class,
-                    "kutu_sayısı": len(sample.boxes),
-                    "genişlik": sample.width,
-                    "yükseklik": sample.height,
-                    "split": split_name,
-                }
-            )
+
+def update_meta_csv(
+    random_splits: dict[str, list[Sample]],
+    grouped_splits: dict[str, list[Sample]] | None,
+    meta_path: Path,
+) -> pd.DataFrame:
+    """meta.csv dosyasını oluşturur veya grouped_split sütununu ekler."""
+    grouped_map: dict[str, str] = {}
+    if grouped_splits is not None:
+        for sp_name, sp_samples in grouped_splits.items():
+            for s in sp_samples:
+                grouped_map[s.filename] = sp_name
+
+    meta_rows: list[dict[str, object]] = []
+    for split_name in ("train", "val", "test"):
+        for sample in random_splits[split_name]:
+            row: dict[str, object] = {
+                "dosya": sample.filename,
+                "kart_no": sample.board_id,
+                "sınıf": sample.folder_class,
+                "kutu_sayısı": len(sample.boxes),
+                "genişlik": sample.width,
+                "yükseklik": sample.height,
+                "split": split_name,
+            }
+            if grouped_splits is not None:
+                row["grouped_split"] = grouped_map[sample.filename]
+            meta_rows.append(row)
 
     df_meta = pd.DataFrame(meta_rows)
     df_meta = df_meta.sort_values(by=["split", "sınıf", "dosya"]).reset_index(drop=True)
@@ -309,45 +378,66 @@ def main() -> None:
         help="Ham veri kök dizini (varsayılan: data/raw/PCB_DATASET)",
     )
     parser.add_argument(
+        "--scheme",
+        type=str,
+        choices=["random", "grouped"],
+        default="random",
+        help="Bölme şeması: random veya grouped (varsayılan: random)",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
-        default=Path("data/yolo/random"),
-        help="YOLO çıktı dizini (varsayılan: data/yolo/random)",
+        default=None,
+        help="YOLO çıktı dizini (varsayılan: data/yolo/<scheme>)",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
-        help="Rastgele bölme tohumu (varsayılan: 42)",
+        help="Bölme tohumu (varsayılan: 42)",
     )
     args = parser.parse_args()
 
+    out_dir: Path = args.out if args.out is not None else Path("data/yolo") / args.scheme
     meta_path = (
-        args.out.parent / "meta.csv"
-        if args.out.name == "random"
-        else args.out / "meta.csv"
+        out_dir.parent / "meta.csv"
+        if out_dir.name in {"random", "grouped"}
+        else out_dir / "meta.csv"
     )
     check_img_path = Path("results/label_check.png")
 
     samples = collect_samples(args.src)
-    splits = split_samples(samples, seed=args.seed)
-    df_meta = export_yolo_dataset(splits, out_dir=args.out, meta_path=meta_path)
-    save_label_check_image(out_dir=args.out, save_path=check_img_path)
+    random_splits = split_samples_random(samples, seed=args.seed)
+
+    if args.scheme == "grouped":
+        grouped_splits = split_samples_grouped(samples, seed=args.seed)
+        export_yolo_dataset(grouped_splits, out_dir=out_dir)
+        df_meta = update_meta_csv(random_splits, grouped_splits, meta_path=meta_path)
+        active_col = "grouped_split"
+    else:
+        grouped_splits_existing = (
+            split_samples_grouped(samples, seed=args.seed)
+            if meta_path.is_file() and "grouped_split" in pd.read_csv(meta_path, nrows=1).columns
+            else None
+        )
+        export_yolo_dataset(random_splits, out_dir=out_dir)
+        df_meta = update_meta_csv(random_splits, grouped_splits_existing, meta_path=meta_path)
+        save_label_check_image(out_dir=out_dir, save_path=check_img_path)
+        active_col = "split"
 
     split_order = ["train", "val", "test"]
-    df_meta["split"] = pd.Categorical(df_meta["split"], categories=split_order, ordered=True)
+    df_meta[active_col] = pd.Categorical(df_meta[active_col], categories=split_order, ordered=True)
 
-    print("\n=== SPLIT x SINIF GÖRÜNTÜ SAYISI TABLOSU ===")
-    tbl_class = pd.crosstab(df_meta["split"], df_meta["sınıf"], margins=True, margins_name="Toplam")
+    print(f"\n=== [{args.scheme.upper()}] SPLIT x SINIF GÖRÜNTÜ SAYISI TABLOSU ===")
+    tbl_class = pd.crosstab(df_meta[active_col], df_meta["sınıf"], margins=True, margins_name="Toplam")
     print(tbl_class.to_string())
 
-    print("\n=== SPLIT x KART_NO GÖRÜNTÜ SAYISI TABLOSU ===")
-    tbl_board = pd.crosstab(df_meta["split"], df_meta["kart_no"], margins=True, margins_name="Toplam")
+    print(f"\n=== [{args.scheme.upper()}] SPLIT x KART_NO GÖRÜNTÜ SAYISI TABLOSU ===")
+    tbl_board = pd.crosstab(df_meta[active_col], df_meta["kart_no"], margins=True, margins_name="Toplam")
     print(tbl_board.to_string())
 
     print(f"\nToplam görüntü: {len(df_meta)} | Toplam kutu: {df_meta['kutu_sayısı'].sum()}")
     print(f"meta.csv kaydedildi: {meta_path}")
-    print(f"Etiket kontrol görseli kaydedildi: {check_img_path}")
 
 
 if __name__ == "__main__":
