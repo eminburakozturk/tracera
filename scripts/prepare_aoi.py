@@ -222,13 +222,40 @@ def parse_aoi_folder(subset_dir: Path, subset_name: str) -> SubsetStats:
     )
 
 
+def _class_signature(sample: AoiSample) -> tuple[tuple[str, int], ...]:
+    """Kopya grubu içinde sınıf dağılımı ve kutu sayısının aynı olup olmadığını kontrol eder."""
+    return tuple(sorted(Counter(b.class_name for b in sample.boxes).items()))
+
+
+def _boxes_signature(sample: AoiSample) -> tuple[tuple[int, float, float, float, float], ...]:
+    """Kopya grubu içinde kutu koordinatlarının birebir aynı olup olmadığını kontrol eder."""
+    return tuple(
+        sorted(
+            (
+                b.class_id,
+                round(b.x_center, 6),
+                round(b.y_center, 6),
+                round(b.width, 6),
+                round(b.height, 6),
+            )
+            for b in sample.boxes
+        )
+    )
+
+
 def deduplicate_samples(
     train_samples: list[AoiSample],
     test_samples: list[AoiSample],
-) -> tuple[list[AoiSample], list[AoiSample], list[tuple[AoiSample, AoiSample]]]:
+) -> tuple[
+    list[AoiSample],
+    list[AoiSample],
+    list[tuple[AoiSample, AoiSample]],
+    list[list[AoiSample]],
+]:
     """233 görüntünün tamamında birebir piksel kopyalarını (MAE=0 / pixel MD5) bulur ve temizler.
 
-    Kopya grubunda dosya adına göre ilkini tutar, diğerlerini atar.
+    Kopya grubunda kutu sayısı en fazla olanı tutar; eşitse dosya adına göre ilkini tutar.
+    Etiketleri farklı olan kopya gruplarını ayrıca raporlamak üzere döndürür.
     train_data ile test_data arasında kopya çıkarsa silmez, RuntimeError ile durdurur.
     """
     all_samples = train_samples + test_samples
@@ -238,16 +265,22 @@ def deduplicate_samples(
 
     cross_subset_dups: list[list[str]] = []
     dropped_pairs: list[tuple[AoiSample, AoiSample]] = []
+    label_diff_groups: list[list[AoiSample]] = []
     dropped_filenames: set[tuple[str, str]] = set()
 
-    for p_hash, group in sorted(by_pixel_hash.items(), key=lambda kv: kv[1][0].filename):
+    for p_hash, group in sorted(by_pixel_hash.items(), key=lambda kv: min(x.filename for x in kv[1])):
         if len(group) <= 1:
             continue
-        group_sorted = sorted(group, key=lambda s: s.filename)
+        # Kural: kutu sayısı en fazla olanı tut, eşitse dosya adına göre ilkini tut
+        group_sorted = sorted(group, key=lambda s: (-len(s.boxes), s.filename))
         subsets_in_group = {s.subset for s in group_sorted}
         if len(subsets_in_group) > 1:
             cross_subset_dups.append([f"{s.subset}/{s.filename}" for s in group_sorted])
             continue
+
+        cls_sigs = {_class_signature(s) for s in group_sorted}
+        if len(cls_sigs) > 1:
+            label_diff_groups.append(group_sorted)
 
         kept = group_sorted[0]
         for dup in group_sorted[1:]:
@@ -262,13 +295,14 @@ def deduplicate_samples(
 
     clean_train = [s for s in train_samples if (s.subset, s.filename) not in dropped_filenames]
     clean_test = [s for s in test_samples if (s.subset, s.filename) not in dropped_filenames]
-    return clean_train, clean_test, dropped_pairs
+    return clean_train, clean_test, dropped_pairs, label_diff_groups
 
 
 def print_inspection_report(
     train_stats: SubsetStats,
     test_stats: SubsetStats,
     dropped_pairs: list[tuple[AoiSample, AoiSample]],
+    label_diff_groups: list[list[AoiSample]],
 ) -> None:
     """Veri seti istatistiklerini ve birebir kopya temizliği raporunu ekrana yazdırır."""
     print("=" * 72)
@@ -293,6 +327,7 @@ def print_inspection_report(
         )
 
     print("\n--- [BİREBİR PİKSEL KOPYA (MAE=0 / MD5) TEMİZLİĞİ (233 görüntü içinde)] ---")
+    print("Kural: Kopya grubunda kutu sayısı en fazla olan tutulur; eşitse dosya adına göre ilki tutulur.")
     print("train_data ∩ test_data arası kopya : 0")
     print(f"Atılan birebir kopya sayısı        : {len(dropped_pairs)}")
     for idx, (kept, dup) in enumerate(dropped_pairs, start=1):
@@ -304,6 +339,18 @@ def print_inspection_report(
             f"<-- TUTULAN: {kept.filename} ({len(kept.boxes)} kutu: {kept_cls}) "
             f"[pixel_md5={dup.pixel_md5[:10]}..., dosya_md5_aynı={same_file_md5}]"
         )
+
+    if label_diff_groups:
+        print(f"\n[UYARI] Etiketleri farklı olan birebir kopya grubu sayısı: {len(label_diff_groups)}")
+        for g_idx, grp in enumerate(label_diff_groups, start=1):
+            kept_s = grp[0]
+            details = [
+                f"{s.filename} (kutu={len(s.boxes)}, sınıflar={dict(Counter(b.class_name for b in s.boxes))})"
+                for s in grp
+            ]
+            print(
+                f"  ! Grup {g_idx} (TUTULAN={kept_s.filename}): " + " vs ".join(details)
+            )
 
 
 def split_train_val(
@@ -476,12 +523,12 @@ def main() -> None:
     train_stats = parse_aoi_folder(args.src / "train_data", "train_data")
     test_stats = parse_aoi_folder(args.src / "test_data", "test_data")
 
-    clean_train, clean_test, dropped_pairs = deduplicate_samples(
+    clean_train, clean_test, dropped_pairs, label_diff_groups = deduplicate_samples(
         train_stats.samples,
         test_stats.samples,
     )
 
-    print_inspection_report(train_stats, test_stats, dropped_pairs)
+    print_inspection_report(train_stats, test_stats, dropped_pairs, label_diff_groups)
 
     train_split, val_split = split_train_val(
         clean_train,
