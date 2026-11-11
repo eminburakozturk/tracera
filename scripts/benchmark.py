@@ -1,5 +1,6 @@
 """Tracera YOLO modellerinin farklı edge formatlarında (PyTorch, ONNX CPU/CUDA, OpenVINO FP32/INT8, TensorRT FP16/INT8)
-boyut (MB), gecikme/FPS (batch=1, 20 ısınma + 200 ölçüm; ön/son işlem hariç ve dahil) ve doğrulama (val) mAP kıyaslama scripti.
+boyut (MB), gecikme/FPS (batch=1, 20 ısınma + 200 ölçüm; ön/son işlem hariç ve dahil ortalama/medyan/p95 ms, medyandan FPS)
+ve doğrulama (val) mAP kıyaslama scripti.
 
 ÖNEMLİ: Değerlendirme yalnızca split='val' üzerinde yapılır (TEST KULLANILMAZ).
 """
@@ -29,6 +30,7 @@ if os.name == "nt":
         except OSError:
             pass
 
+import ultralytics
 from ultralytics import YOLO
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -41,6 +43,29 @@ class BenchmarkTarget:
     artifact_path: Path
     device: str
     is_gpu: bool
+
+
+@dataclass(frozen=True)
+class LatencyAndValMetrics:
+    inf_mean_ms: float
+    inf_median_ms: float
+    inf_p95_ms: float
+    e2e_mean_ms: float
+    e2e_median_ms: float
+    e2e_p95_ms: float
+    fps_infer_only: float
+    fps_end2end: float
+    map50: float
+    map50_95: float
+
+
+def get_package_version(module_name: str) -> str:
+    """İlgili paketin yüklü sürüm numarasını döndürür (yoksa '-')."""
+    try:
+        mod = __import__(module_name)
+        return str(getattr(mod, "__version__", "-"))
+    except Exception:
+        return "-"
 
 
 def get_cpu_model_name() -> str:
@@ -248,8 +273,8 @@ def measure_fps_and_val(
     runs: int,
     val_frames: list[np.ndarray],
     resolved_yaml: Path,
-) -> tuple[float, float, float, float, float, float]:
-    """Tek bir format için (1) 20 ısınma + 200 ölçüm FPS ve (2) split='val' mAP50 / mAP50-95 hesaplar."""
+) -> LatencyAndValMetrics:
+    """Tek bir format için (1) 20 ısınma + 200 ölçüm gecikme (ortalama, medyan, p95; medyandan FPS) ve (2) split='val' mAP hesaplar."""
     if not target.artifact_path.exists():
         raise FileNotFoundError(f"Model dosyası/klasörü bulunamadı: {target.artifact_path}")
 
@@ -257,7 +282,7 @@ def measure_fps_and_val(
 
     # 1. Isınma (Warmup)
     for i in range(warmup):
-        res = model.predict(
+        model.predict(
             source=val_frames[i],
             imgsz=imgsz,
             batch=1,
@@ -304,10 +329,20 @@ def measure_fps_and_val(
         infer_only_ms_list.append(inf_ms)
         end2end_ms_list.append(total_spd_ms)
 
-    mean_infer_ms = float(np.mean(infer_only_ms_list))
-    mean_e2e_ms = float(np.mean(end2end_ms_list))
-    fps_infer_only = 1000.0 / mean_infer_ms if mean_infer_ms > 0 else 0.0
-    fps_end2end = 1000.0 / mean_e2e_ms if mean_e2e_ms > 0 else 0.0
+    inf_arr = np.asarray(infer_only_ms_list, dtype=np.float64)
+    e2e_arr = np.asarray(end2end_ms_list, dtype=np.float64)
+
+    inf_mean_ms = float(np.mean(inf_arr))
+    inf_median_ms = float(np.median(inf_arr))
+    inf_p95_ms = float(np.percentile(inf_arr, 95))
+
+    e2e_mean_ms = float(np.mean(e2e_arr))
+    e2e_median_ms = float(np.median(e2e_arr))
+    e2e_p95_ms = float(np.percentile(e2e_arr, 95))
+
+    # FPS medyandan hesaplanır
+    fps_infer_only = 1000.0 / inf_median_ms if inf_median_ms > 0 else 0.0
+    fps_end2end = 1000.0 / e2e_median_ms if e2e_median_ms > 0 else 0.0
 
     # 3. Doğrulama mAP (YALNIZCA split="val", TEST DEĞİL!)
     eval_split = "val"
@@ -329,7 +364,18 @@ def measure_fps_and_val(
     map50 = float(metrics.box.map50)
     map50_95 = float(metrics.box.map)
 
-    return mean_infer_ms, mean_e2e_ms, fps_infer_only, fps_end2end, map50, map50_95
+    return LatencyAndValMetrics(
+        inf_mean_ms=inf_mean_ms,
+        inf_median_ms=inf_median_ms,
+        inf_p95_ms=inf_p95_ms,
+        e2e_mean_ms=e2e_mean_ms,
+        e2e_median_ms=e2e_median_ms,
+        e2e_p95_ms=e2e_p95_ms,
+        fps_infer_only=fps_infer_only,
+        fps_end2end=fps_end2end,
+        map50=map50,
+        map50_95=map50_95,
+    )
 
 
 def upsert_benchmark_csv(new_rows: list[dict[str, object]], out_csv: Path) -> pd.DataFrame:
@@ -354,7 +400,7 @@ def upsert_benchmark_csv(new_rows: list[dict[str, object]], out_csv: Path) -> pd
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tracera Edge Benchmark Scripti (Boyut MB, FPS [20 ısınma + 200 ölçüm], Val mAP)"
+        description="Tracera Edge Benchmark Scripti (Boyut MB, Ortalama/Medyan/p95 Gecikme, Medyan FPS, Val mAP)"
     )
     parser.add_argument(
         "--weights",
@@ -400,6 +446,13 @@ def parse_args() -> argparse.Namespace:
         help="GPU hedefleri için CUDA cihaz kimliği (varsayılan: 0)",
     )
     parser.add_argument(
+        "--power",
+        type=str,
+        choices=["plugged", "battery"],
+        default="plugged",
+        help="Güç durumu: plugged (prize takılı) veya battery (pil) (varsayılan: plugged)",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=Path("results/edge_benchmark.csv"),
@@ -438,15 +491,24 @@ def main() -> None:
 
     cpu_hw = get_cpu_model_name()
     gpu_hw = get_gpu_model_name(0)
+    ultralytics_ver = str(ultralytics.__version__)
+    torch_ver = str(torch.__version__)
+    ort_ver = get_package_version("onnxruntime")
+    ov_ver = get_package_version("openvino")
+    num_threads = int(torch.get_num_threads())
 
     targets = discover_targets(weights_path, list(args.formats), gpu_device=args.device)
 
-    print("=" * 80)
-    print(f"TRACERA EDGE BENCHMARK — model={model_label} | imgsz={args.imgsz} | split=val")
-    print(f"CPU Donanımı : {cpu_hw}")
+    print("=" * 88)
+    print(f"TRACERA EDGE BENCHMARK — model={model_label} | imgsz={args.imgsz} | split=val | güç={args.power}")
+    print(f"CPU Donanımı : {cpu_hw} (torch threads={num_threads})")
     print(f"GPU Donanımı : {gpu_hw}")
-    print(f"Protokol     : batch=1, {args.warmup} ısınma + {args.runs} ölçüm")
-    print("=" * 80)
+    print(
+        f"Sürümler     : ultralytics={ultralytics_ver}, torch={torch_ver}, "
+        f"onnxruntime={ort_ver}, openvino={ov_ver}"
+    )
+    print(f"Protokol     : batch=1, {args.warmup} ısınma + {args.runs} ölçüm (FPS medyandan)")
+    print("=" * 88)
 
     rows: list[dict[str, object]] = []
     for target in targets:
@@ -454,7 +516,7 @@ def main() -> None:
         print(f"\n>>> Ölçülüyor: {target.format_name} ({target.artifact_path.name}) [{hw_name}] ...")
         try:
             mb = get_size_mb(target.artifact_path)
-            inf_ms, e2e_ms, fps_inf, fps_e2e, map50, map50_95 = measure_fps_and_val(
+            m = measure_fps_and_val(
                 target=target,
                 imgsz=args.imgsz,
                 warmup=args.warmup,
@@ -467,20 +529,30 @@ def main() -> None:
                 "imgsz": args.imgsz,
                 "format": target.format_name,
                 "boyut_mb": round(mb, 2),
-                "gecikme_inference_ms": round(inf_ms, 2),
-                "gecikme_toplam_ms": round(e2e_ms, 2),
-                "fps_sadece_inference": round(fps_inf, 1),
-                "fps_on_son_islem_dahil": round(fps_e2e, 1),
-                "mAP50": round(map50, 4),
-                "mAP50-95": round(map50_95, 4),
+                "gecikme_inf_ort_ms": round(m.inf_mean_ms, 2),
+                "gecikme_inf_medyan_ms": round(m.inf_median_ms, 2),
+                "gecikme_inf_p95_ms": round(m.inf_p95_ms, 2),
+                "gecikme_toplam_ort_ms": round(m.e2e_mean_ms, 2),
+                "gecikme_toplam_medyan_ms": round(m.e2e_median_ms, 2),
+                "gecikme_toplam_p95_ms": round(m.e2e_p95_ms, 2),
+                "fps_sadece_inference": round(m.fps_infer_only, 1),
+                "fps_on_son_islem_dahil": round(m.fps_end2end, 1),
+                "mAP50": round(m.map50, 4),
+                "mAP50-95": round(m.map50_95, 4),
                 "donanım": hw_name,
+                "güç": args.power,
+                "cpu_threads": num_threads,
+                "ultralytics_ver": ultralytics_ver,
+                "torch_ver": torch_ver,
+                "onnxruntime_ver": ort_ver,
+                "openvino_ver": ov_ver,
             }
             rows.append(row)
             print(
                 f"[TAMAM] {target.format_name}: {mb:.2f} MB | "
-                f"FPS(inf)={fps_inf:.1f} ({inf_ms:.2f} ms) | "
-                f"FPS(dahil)={fps_e2e:.1f} ({e2e_ms:.2f} ms) | "
-                f"mAP50={map50:.4f} | mAP50-95={map50_95:.4f}"
+                f"FPS(inf,med)={m.fps_infer_only:.1f} (med={m.inf_median_ms:.2f}, ort={m.inf_mean_ms:.2f}, p95={m.inf_p95_ms:.2f} ms) | "
+                f"FPS(dahil,med)={m.fps_end2end:.1f} (med={m.e2e_median_ms:.2f}, ort={m.e2e_mean_ms:.2f}, p95={m.e2e_p95_ms:.2f} ms) | "
+                f"mAP50={m.map50:.4f} | mAP50-95={m.map50_95:.4f}"
             )
         except Exception as exc:
             print(f"[ATLANDI / HATA] {target.format_name}: {exc}")
@@ -489,9 +561,9 @@ def main() -> None:
     if rows:
         out_csv = args.out if args.out.is_absolute() else (REPO_ROOT / args.out).resolve()
         df_all = upsert_benchmark_csv(rows, out_csv)
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 88)
         print(f"GÜNCEL EDGE BENCHMARK TABLOSU ({out_csv})")
-        print("=" * 80)
+        print("=" * 88)
         print(df_all.to_string(index=False))
     else:
         print("\n[UYARI] Hiçbir hedef başarıyla ölçülemedi.")
