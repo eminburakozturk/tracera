@@ -1,0 +1,12 @@
+# PyTorch ayrı kurulur (CUDA sürümü için setup_env.bat'a bak)
+ultralytics
+mlflow
+onnx
+onnxruntime-gpu
+openvino
+grad-cam
+gradio
+opencv-python
+pandas
+matplotlib
+scikit-learn
