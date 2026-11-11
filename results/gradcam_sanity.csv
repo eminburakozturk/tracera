@@ -1,2 +1,4 @@
-model,imgsz,katman,n_tespit,pointing_game,şans_oranı,randomizasyon_spearman_medyan
-g_y11s_640,640,16,481,0.0977,0.00107,0.0252
+model,imgsz,katman,method,n_tespit,kendi_kutu,şans_kendi_kutu,herhangi_kutu,şans_herhangi_kutu,randomizasyon_spearman_medyan
+g_y11s_640,640,16,gradcam,481,0.0977,0.001061,0.5904,0.005053,0.0252
+g_y11s_640,640,16,hirescam,481,0.9127,0.001061,0.9127,0.005053,0.8607
+g_y11s_640,640,16,layercam,481,0.9854,0.001061,0.9854,0.005053,0.7108

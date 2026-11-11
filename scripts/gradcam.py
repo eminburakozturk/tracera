@@ -1,4 +1,4 @@
-"""Tracera — Tespit bazlı Grad-CAM ve iki doğrulama testi (Pointing Game + Adebayo Model Randomizasyon).
+"""Tracera — Tespit bazlı CAM (Grad-CAM, HiResCAM, LayerCAM) ve doğrulama testleri (Pointing Game + Model Randomizasyon).
 
 ÖNEMLİ: Yalnızca CPU üzerinde (device='cpu') çalışır; GPU'ya dokunmaz.
 """
@@ -27,6 +27,7 @@ from ultralytics import YOLO
 from ultralytics.utils.nms import non_max_suppression
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+METHODS: tuple[str, ...] = ("gradcam", "hirescam", "layercam")
 
 
 @dataclass(frozen=True)
@@ -125,7 +126,7 @@ def box_lb_to_orig(xyxy_lb: tuple[float, float, float, float], lb: LetterboxTran
 
 
 def unletterbox_cam(cam_lb: np.ndarray, lb: LetterboxTransform) -> np.ndarray:
-    """imgsz x imgsz boyutundaki Grad-CAM haritasından letterbox dolgularını kesip orijinal boyuta ölçekler."""
+    """imgsz x imgsz boyutundaki CAM haritasından letterbox dolgularını kesip orijinal boyuta ölçekler."""
     crop = cam_lb[lb.top : lb.top + lb.unpad_h, lb.left : lb.left + lb.unpad_w]
     if crop.size == 0:
         crop = cam_lb
@@ -154,8 +155,35 @@ def compute_iou_single_vs_many(box: tuple[float, float, float, float], boxes: np
     return np.where(union > 0, inter / union, 0.0).astype(np.float32)
 
 
-class YoloDetectionGradCAM:
-    """Belirli bir katman üzerinde forward/backward hook ile tespit bazlı klasik Grad-CAM üretici."""
+def compute_cam_from_acts_grads(
+    acts: torch.Tensor,
+    grads: torch.Tensor,
+    method: str,
+    imgsz: int,
+    lb: LetterboxTransform,
+) -> np.ndarray:
+    """Aktivasyon (C, H, W) ve gradyan (C, H, W) tensörlerinden seçilen yönteme göre harita üretir.
+
+    - gradcam  : ReLU( sum_k mean_{i,j}(grad_k) * A_k )
+    - hirescam : ReLU( sum_k (grad_k ⊙ A_k) )
+    - layercam : ReLU( sum_k (ReLU(grad_k) ⊙ A_k) )
+    """
+    if method == "gradcam":
+        weights = grads.mean(dim=(1, 2), keepdim=True)
+        cam_2d = torch.relu((weights * acts).sum(dim=0)).cpu().numpy()
+    elif method == "hirescam":
+        cam_2d = torch.relu((grads * acts).sum(dim=0)).cpu().numpy()
+    elif method == "layercam":
+        cam_2d = torch.relu((torch.relu(grads) * acts).sum(dim=0)).cpu().numpy()
+    else:
+        raise ValueError(f"Bilinmeyen CAM yöntemi: {method}")
+
+    cam_lb = cv2.resize(cam_2d, (imgsz, imgsz), interpolation=cv2.INTER_LINEAR)
+    return unletterbox_cam(cam_lb, lb)
+
+
+class YoloDetectionCAM:
+    """Belirli bir katman üzerinde forward/backward hook ile tespit bazlı Grad-CAM / HiResCAM / LayerCAM üretici."""
 
     def __init__(self, nn_model: nn.Module, layer_idx: int, imgsz: int) -> None:
         self.nn_model = nn_model.to("cpu").eval()
@@ -204,7 +232,6 @@ class YoloDetectionGradCAM:
         max_iou = float(ious.max()) if len(ious) > 0 else 0.0
         if max_iou > 0.0:
             return int(np.argmax(ious))
-        # Hiç örtüşme yoksa merkez noktası en yakın anchor'ı seç
         tcx = (target_xyxy_lb[0] + target_xyxy_lb[2]) / 2.0
         tcy = (target_xyxy_lb[1] + target_xyxy_lb[3]) / 2.0
         acx = (anchor_xyxy[:, 0] + anchor_xyxy[:, 2]) / 2.0
@@ -212,14 +239,15 @@ class YoloDetectionGradCAM:
         dist2 = (acx - tcx) ** 2 + (acy - tcy) ** 2
         return int(np.argmin(dist2))
 
-    def compute_cam_for_anchor(
+    def compute_cams_for_anchor(
         self,
         raw_out: torch.Tensor,
         anchor_idx: int,
         class_id: int,
         lb: LetterboxTransform,
-    ) -> np.ndarray:
-        """Seçilen anchor ve sınıf skoru için klasik Grad-CAM hesaplar ve orijinal görüntü boyutuna geri oturtur."""
+        methods: tuple[str, ...] = METHODS,
+    ) -> dict[str, np.ndarray]:
+        """Tek bir backward geçişiyle istenen tüm CAM yöntemlerinin (gradcam, hirescam, layercam) haritalarını üretir."""
         self.nn_model.zero_grad(set_to_none=True)
         self.gradients = None
 
@@ -227,17 +255,15 @@ class YoloDetectionGradCAM:
         target_score.backward(retain_graph=True)
 
         if self.activations is None or self.gradients is None:
-            raise RuntimeError("Grad-CAM aktivasyon veya gradyan yakalanamadı.")
+            raise RuntimeError("CAM aktivasyon veya gradyan yakalanamadı.")
 
         acts = self.activations.detach()[0]  # (C, H, W)
         grads = self.gradients.detach()[0]   # (C, H, W)
 
-        # Klasik Grad-CAM: kanal ağırlığı = gradyanın uzamsal ortalaması, ağırlıklı toplam, ReLU, normalize
-        weights = grads.mean(dim=(1, 2), keepdim=True)  # (C, 1, 1)
-        cam = torch.relu((weights * acts).sum(dim=0)).cpu().numpy()  # (H, W)
-
-        cam_lb = cv2.resize(cam, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
-        return unletterbox_cam(cam_lb, lb)
+        return {
+            m: compute_cam_from_acts_grads(acts, grads, method=m, imgsz=self.imgsz, lb=lb)
+            for m in methods
+        }
 
     def close(self) -> None:
         self._fwd_handle.remove()
@@ -295,16 +321,15 @@ def load_gt_boxes(lbl_path: Path, lb: LetterboxTransform, class_names: dict[int,
     return gts
 
 
-def render_gradcam_panel(
+def make_overlay_and_zoom(
     img_bgr: np.ndarray,
     cam_orig: np.ndarray,
     box_orig: tuple[float, float, float, float],
-    title_str: str,
     label_str: str,
     box_color_rgb: tuple[int, int, int] = (0, 255, 100),
     extra_gt_box: tuple[float, float, float, float] | None = None,
-) -> np.ndarray:
-    """Sol tarafta tam PCB üzerinde Grad-CAM + kutu, sağ tarafta kutu çevresinin yakınlaştırılmış (zoom) görünümünü üretir."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Tam görüntü overlay ve kutu çevresi zoom görüntüsünü RGB olarak döndürür."""
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     h, w = img_rgb.shape[:2]
 
@@ -312,14 +337,13 @@ def render_gradcam_panel(
     heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
     overlay = np.uint8(0.58 * img_rgb + 0.42 * heatmap_rgb)
 
-    # Maksimum Grad-CAM noktasını işaretle
     max_y, max_x = np.unravel_index(int(np.argmax(cam_orig)), cam_orig.shape)
     cv2.drawMarker(
         overlay,
         (int(max_x), int(max_y)),
         (255, 255, 255),
         markerType=cv2.MARKER_CROSS,
-        markerSize=28,
+        markerSize=30,
         thickness=3,
     )
 
@@ -340,7 +364,6 @@ def render_gradcam_panel(
         cv2.LINE_AA,
     )
 
-    # Yakınlaştırılmış (Zoom) bölge (kutu merkezinden ±220 px)
     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
     half_crop = max(180, int(max(x2 - x1, y2 - y1) * 2.5))
     zx1 = max(0, cx - half_crop)
@@ -348,16 +371,84 @@ def render_gradcam_panel(
     zx2 = min(w, cx + half_crop)
     zy2 = min(h, cy + half_crop)
     zoom_crop = overlay[zy1:zy2, zx1:zx2]
+    return overlay, zoom_crop
 
+
+def render_single_method_panel(
+    img_bgr: np.ndarray,
+    cam_orig: np.ndarray,
+    box_orig: tuple[float, float, float, float],
+    title_str: str,
+    label_str: str,
+    box_color_rgb: tuple[int, int, int] = (0, 255, 100),
+    extra_gt_box: tuple[float, float, float, float] | None = None,
+) -> np.ndarray:
+    """Tek bir yöntem için tam PCB + yakınlaştırılmış bölge panelini üretir."""
+    overlay, zoom_crop = make_overlay_and_zoom(
+        img_bgr=img_bgr,
+        cam_orig=cam_orig,
+        box_orig=box_orig,
+        label_str=label_str,
+        box_color_rgb=box_color_rgb,
+        extra_gt_box=extra_gt_box,
+    )
     fig, axes = plt.subplots(1, 2, figsize=(13, 6), gridspec_kw={"width_ratios": [1.35, 1.0]})
     axes[0].imshow(overlay)
-    axes[0].set_title(f"{title_str}\n(Beyaz artı: Grad-CAM maksimumu)", fontsize=11, fontweight="bold")
+    axes[0].set_title(f"{title_str}\n(Beyaz artı: harita maksimumu)", fontsize=11, fontweight="bold")
     axes[0].axis("off")
 
     axes[1].imshow(zoom_crop)
     axes[1].set_title(f"Yakınlaştırılmış Bölge ({label_str})", fontsize=11, fontweight="bold")
     axes[1].axis("off")
 
+    plt.tight_layout()
+    fig.canvas.draw()
+    buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
+    plt.close(fig)
+    return buf
+
+
+def render_three_method_compare_panel(
+    img_bgr: np.ndarray,
+    cams_by_method: dict[str, np.ndarray],
+    box_orig: tuple[float, float, float, float],
+    header_str: str,
+    label_str: str,
+    box_color_rgb: tuple[int, int, int] = (0, 255, 100),
+    extra_gt_box: tuple[float, float, float, float] | None = None,
+) -> np.ndarray:
+    """Üç yöntemi (Grad-CAM, HiResCAM, LayerCAM) aynı tespit için yan yana (üst: tam kart, alt: zoom) çizer."""
+    method_titles = {
+        "gradcam": "Grad-CAM (Uzamsal Ortalama Ağırlık)",
+        "hirescam": "HiResCAM (grad ⊙ A, Eleman Bazlı)",
+        "layercam": "LayerCAM (ReLU(grad) ⊙ A)",
+    }
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10.5), gridspec_kw={"height_ratios": [1.15, 1.0]})
+
+    for col_idx, m_name in enumerate(METHODS):
+        cam = cams_by_method[m_name]
+        overlay, zoom_crop = make_overlay_and_zoom(
+            img_bgr=img_bgr,
+            cam_orig=cam,
+            box_orig=box_orig,
+            label_str=label_str,
+            box_color_rgb=box_color_rgb,
+            extra_gt_box=extra_gt_box,
+        )
+        max_y, max_x = np.unravel_index(int(np.argmax(cam)), cam.shape)
+        bx1, by1, bx2, by2 = box_orig
+        in_box = bx1 <= max_x <= bx2 and by1 <= max_y <= by2
+        hit_tag = "Макс: KUTU İÇİNDE" if in_box else "Maks: Kutu Dışında"
+
+        axes[0, col_idx].imshow(overlay)
+        axes[0, col_idx].set_title(f"{method_titles[m_name]}\n[{hit_tag}]", fontsize=11, fontweight="bold")
+        axes[0, col_idx].axis("off")
+
+        axes[1, col_idx].imshow(zoom_crop)
+        axes[1, col_idx].set_title(f"{m_name} — Yakınlaştırılmış ({label_str})", fontsize=10)
+        axes[1, col_idx].axis("off")
+
+    plt.suptitle(header_str, fontsize=13, fontweight="bold")
     plt.tight_layout()
     fig.canvas.draw()
     buf = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
@@ -372,7 +463,7 @@ def save_rgb_image(rgb: np.ndarray, path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tracera Tespit Bazlı Grad-CAM ve Doğrulama Testleri (Pointing Game + Model Randomizasyon) [CPU]"
+        description="Tracera Tespit Bazlı Grad-CAM / HiResCAM / LayerCAM ve Doğrulama Testleri [CPU]"
     )
     parser.add_argument(
         "--weights",
@@ -398,6 +489,13 @@ def parse_args() -> argparse.Namespace:
         choices=["val", "test", "train"],
         default="val",
         help="Değerlendirilecek veri bölmesi (varsayılan: val)",
+    )
+    parser.add_argument(
+        "--method",
+        type=str,
+        choices=["gradcam", "hirescam", "layercam"],
+        default="hirescam",
+        help="Birincil CAM yöntemi: gradcam, hirescam veya layercam (varsayılan: hirescam)",
     )
     parser.add_argument(
         "--layer",
@@ -456,30 +554,38 @@ def main() -> None:
         else weights_path.stem
     )
 
-    print("=" * 78)
-    print(f"TRACERA GRAD-CAM VE SANITY CHECK (CPU) — model={model_label} | imgsz={args.imgsz}")
+    print("=" * 84)
+    print(
+        f"TRACERA CAM KARŞILAŞTIRMASI VE SANITY CHECK (CPU) — "
+        f"model={model_label} | imgsz={args.imgsz} | birincil_method={args.method}"
+    )
     print(f"Detect modülü .f listesi : {detect_f} (P3/P4/P5 girdileri)")
     print(f"Seçilen hedef katman     : {target_layer_idx} ({type(trained_nn.model[target_layer_idx]).__name__})")
+    print(f"Karşılaştırılan yöntemler: {list(METHODS)}")
     print(f"Veri bölmesi             : {args.split} ({img_dir})")
-    print("=" * 78)
+    print("=" * 84)
 
-    gradcam_trained = YoloDetectionGradCAM(trained_nn, layer_idx=target_layer_idx, imgsz=args.imgsz)
+    cam_trained = YoloDetectionCAM(trained_nn, layer_idx=target_layer_idx, imgsz=args.imgsz)
     rand_nn = build_randomized_model(trained_nn, seed=42)
-    gradcam_rand = YoloDetectionGradCAM(rand_nn, layer_idx=target_layer_idx, imgsz=args.imgsz)
+    cam_rand = YoloDetectionCAM(rand_nn, layer_idx=target_layer_idx, imgsz=args.imgsz)
 
     img_paths = sorted(
         [p for p in img_dir.iterdir() if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png"}],
         key=lambda p: p.name,
     )
 
-    pointing_hits = 0
-    chance_rates: list[float] = []
-    spearman_corrs: list[float] = []
+    hits_own_box: dict[str, int] = {m: 0 for m in METHODS}
+    hits_any_box: dict[str, int] = {m: 0 for m in METHODS}
+    spearman_corrs: dict[str, list[float]] = {m: [] for m in METHODS}
     n_tp = 0
 
-    tp_examples: dict[int, tuple[np.ndarray, str]] = {}
-    fp_examples: list[tuple[float, np.ndarray, str]] = []
-    fn_examples: list[tuple[np.ndarray, str]] = []
+    # Görüntü başına şans oranları (kendi kutu alanı / görüntü; tüm GT alanları toplamı / görüntü)
+    img_chance_own_list: list[float] = []
+    img_chance_any_list: list[float] = []
+
+    tp_single_panels: dict[int, np.ndarray] = {}
+    fp_candidates: list[tuple[float, np.ndarray, np.ndarray, str]] = []
+    fn_saved_count = 0
 
     out_dir = REPO_ROOT / "results" / "gradcam"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -491,6 +597,12 @@ def main() -> None:
         lb = letterbox_image(img_bgr, imgsz=args.imgsz)
         gts = load_gt_boxes(lbl_dir / f"{img_path.stem}.txt", lb=lb, class_names=class_names)
 
+        img_area = float(lb.orig_w * lb.orig_h)
+        if gts:
+            gt_areas = [max(0.0, (g.xyxy_orig[2] - g.xyxy_orig[0]) * (g.xyxy_orig[3] - g.xyxy_orig[1])) for g in gts]
+            img_chance_own_list.append(float(np.mean(gt_areas)) / img_area)
+            img_chance_any_list.append(float(np.sum(gt_areas)) / img_area)
+
         x_tensor = (
             torch.from_numpy(lb.img_lb[:, :, ::-1].transpose(2, 0, 1).copy())
             .float()
@@ -498,16 +610,15 @@ def main() -> None:
             / 255.0
         )
 
-        raw_out_tr, anchor_xyxy = gradcam_trained.forward_image(x_tensor)
+        raw_out_tr, anchor_xyxy = cam_trained.forward_image(x_tensor)
         nms_preds = non_max_suppression(
             raw_out_tr.detach().clone(),
             conf_thres=args.conf,
             iou_thres=args.iou,
-        )[0]  # (M, 6): x1, y1, x2, y2, conf, cls (letterbox koordinatlarında)
+        )[0]
 
         preds_np = nms_preds.cpu().numpy() if len(nms_preds) > 0 else np.zeros((0, 6), dtype=np.float32)
 
-        # GT eşleştirme (IoU >= 0.5, aynı sınıf)
         matched_gt_indices: set[int] = set()
         det_items: list[DetectionItem] = []
 
@@ -547,128 +658,164 @@ def main() -> None:
                 )
             )
 
-        # Bu görüntüde TP varsa randomized modelin forward'ını yalnızca 1 kez çalıştır
         has_tp = any(d.matched_gt is not None for d in det_items)
         raw_out_rand: torch.Tensor | None = None
         if has_tp:
-            raw_out_rand, _ = gradcam_rand.forward_image(x_tensor)
+            raw_out_rand, _ = cam_rand.forward_image(x_tensor)
 
         for det in det_items:
-            anchor_idx = gradcam_trained.find_best_anchor(det.xyxy_lb, anchor_xyxy)
+            anchor_idx = cam_trained.find_best_anchor(det.xyxy_lb, anchor_xyxy)
             if det.matched_gt is not None:
                 n_tp += 1
-                cam_orig = gradcam_trained.compute_cam_for_anchor(
+                cams_tr = cam_trained.compute_cams_for_anchor(
                     raw_out=raw_out_tr,
                     anchor_idx=anchor_idx,
                     class_id=det.class_id,
                     lb=lb,
+                    methods=METHODS,
                 )
-
-                # Doğrulama 1: Pointing Game (maksimum nokta GT kutusu içinde mi?)
-                max_y, max_x = np.unravel_index(int(np.argmax(cam_orig)), cam_orig.shape)
-                gx1, gy1, gx2, gy2 = det.matched_gt.xyxy_orig
-                if gx1 <= max_x <= gx2 and gy1 <= max_y <= gy2:
-                    pointing_hits += 1
-
-                gt_area = max(0.0, (gx2 - gx1) * (gy2 - gy1))
-                chance_rates.append(gt_area / float(lb.orig_w * lb.orig_h))
-
-                # Doğrulama 2: Model Randomizasyon Spearman korelasyonu
                 assert raw_out_rand is not None
-                cam_rand = gradcam_rand.compute_cam_for_anchor(
+                cams_rn = cam_rand.compute_cams_for_anchor(
                     raw_out=raw_out_rand,
                     anchor_idx=anchor_idx,
                     class_id=det.class_id,
                     lb=lb,
+                    methods=METHODS,
                 )
-                # Hız için 160x160 ızgarada Spearman sıra korelasyonu
-                c_tr_small = cv2.resize(cam_orig, (160, 160), interpolation=cv2.INTER_AREA).ravel()
-                c_rn_small = cv2.resize(cam_rand, (160, 160), interpolation=cv2.INTER_AREA).ravel()
-                if np.std(c_tr_small) < 1e-8 or np.std(c_rn_small) < 1e-8:
-                    rho = 0.0
-                else:
-                    res_sp = spearmanr(c_tr_small, c_rn_small)
-                    rho = float(res_sp.statistic) if not np.isnan(res_sp.statistic) else 0.0
-                spearman_corrs.append(rho)
 
-                # Her sınıftan 1 doğru tespit görseli sakla
-                if det.class_id not in tp_examples:
-                    panel = render_gradcam_panel(
+                gx1, gy1, gx2, gy2 = det.matched_gt.xyxy_orig
+                for m_name in METHODS:
+                    c_map = cams_tr[m_name]
+                    max_y, max_x = np.unravel_index(int(np.argmax(c_map)), c_map.shape)
+                    if gx1 <= max_x <= gx2 and gy1 <= max_y <= gy2:
+                        hits_own_box[m_name] += 1
+                    if any(
+                        g.xyxy_orig[0] <= max_x <= g.xyxy_orig[2] and g.xyxy_orig[1] <= max_y <= g.xyxy_orig[3]
+                        for g in gts
+                    ):
+                        hits_any_box[m_name] += 1
+
+                    c_tr_s = cv2.resize(c_map, (160, 160), interpolation=cv2.INTER_AREA).ravel()
+                    c_rn_s = cv2.resize(cams_rn[m_name], (160, 160), interpolation=cv2.INTER_AREA).ravel()
+                    if np.std(c_tr_s) < 1e-8 or np.std(c_rn_s) < 1e-8:
+                        rho = 0.0
+                    else:
+                        res_sp = spearmanr(c_tr_s, c_rn_s)
+                        rho = float(res_sp.statistic) if not np.isnan(res_sp.statistic) else 0.0
+                    spearman_corrs[m_name].append(rho)
+
+                # Her sınıftan 1 doğru tespit için hem tekil hem 3'lü karşılaştırma görseli
+                if det.class_id not in tp_single_panels:
+                    single_pnl = render_single_method_panel(
                         img_bgr=img_bgr,
-                        cam_orig=cam_orig,
+                        cam_orig=cams_tr[args.method],
                         box_orig=det.xyxy_orig,
-                        title_str=f"[DOĞRU TESPİT - TP] {det.stem} | IoU={det.iou_with_gt:.2f}",
+                        title_str=f"[{args.method.upper()} - TP] {det.stem} | IoU={det.iou_with_gt:.2f}",
                         label_str=f"{det.class_name} {det.conf:.2f}",
                         box_color_rgb=(40, 235, 80),
                         extra_gt_box=det.matched_gt.xyxy_orig,
                     )
-                    fname = f"tp_{det.class_id}_{det.class_name}_{det.stem}.png"
-                    save_rgb_image(panel, out_dir / fname)
-                    tp_examples[det.class_id] = (panel, fname)
+                    save_rgb_image(single_pnl, out_dir / f"tp_{det.class_id}_{det.class_name}_{det.stem}.png")
+                    tp_single_panels[det.class_id] = single_pnl
+
+                    cmp_pnl = render_three_method_compare_panel(
+                        img_bgr=img_bgr,
+                        cams_by_method=cams_tr,
+                        box_orig=det.xyxy_orig,
+                        header_str=(
+                            f"[DOĞRU TESPİT - TP] Sınıf: {det.class_name} ({det.stem}, conf={det.conf:.2f}, IoU={det.iou_with_gt:.2f}) "
+                            f"— Grad-CAM vs HiResCAM vs LayerCAM"
+                        ),
+                        label_str=f"{det.class_name} {det.conf:.2f}",
+                        box_color_rgb=(40, 235, 80),
+                        extra_gt_box=det.matched_gt.xyxy_orig,
+                    )
+                    save_rgb_image(cmp_pnl, out_dir / f"compare_tp_{det.class_id}_{det.class_name}_{det.stem}.png")
 
             else:
-                # Yanlış Pozitif (FP) adayları (en yüksek güvenli 2 FP'yi tut)
-                if len(fp_examples) < 2 or det.conf > fp_examples[-1][0]:
-                    cam_fp = gradcam_trained.compute_cam_for_anchor(
+                if len(fp_candidates) < 2 or det.conf > fp_candidates[-1][0]:
+                    cams_fp = cam_trained.compute_cams_for_anchor(
                         raw_out=raw_out_tr,
                         anchor_idx=anchor_idx,
                         class_id=det.class_id,
                         lb=lb,
+                        methods=METHODS,
                     )
-                    panel_fp = render_gradcam_panel(
+                    single_fp = render_single_method_panel(
                         img_bgr=img_bgr,
-                        cam_orig=cam_fp,
+                        cam_orig=cams_fp[args.method],
                         box_orig=det.xyxy_orig,
-                        title_str=f"[YANLIŞ POZİTİF - FP] {det.stem} (GT karşılığı yok)",
+                        title_str=f"[{args.method.upper()} - FP] {det.stem} (GT karşılığı yok)",
                         label_str=f"FP: {det.class_name} {det.conf:.2f}",
                         box_color_rgb=(255, 50, 50),
                     )
-                    fp_examples.append((det.conf, panel_fp, f"fp_{det.class_name}_{det.stem}.png"))
-                    fp_examples.sort(key=lambda x: -x[0])
-                    fp_examples = fp_examples[:2]
+                    cmp_fp = render_three_method_compare_panel(
+                        img_bgr=img_bgr,
+                        cams_by_method=cams_fp,
+                        box_orig=det.xyxy_orig,
+                        header_str=(
+                            f"[YANLIŞ POZİTİF - FP] {det.stem} (Tahmin: {det.class_name}, conf={det.conf:.2f}) "
+                            f"— Grad-CAM vs HiResCAM vs LayerCAM"
+                        ),
+                        label_str=f"FP: {det.class_name} {det.conf:.2f}",
+                        box_color_rgb=(255, 50, 50),
+                    )
+                    fp_candidates.append((det.conf, single_fp, cmp_fp, f"{det.class_name}_{det.stem}.png"))
+                    fp_candidates.sort(key=lambda x: -x[0])
+                    fp_candidates = fp_candidates[:2]
 
-        # Kaçırılan Hatalar (FN): eşleşmeyen GT kutuları (en yakın anchor'ın haritası)
-        if len(fn_examples) < 2:
+        if fn_saved_count < 2:
             for g_idx, g in enumerate(gts):
                 if g_idx in matched_gt_indices:
                     continue
-                fn_anchor_idx = gradcam_trained.find_best_anchor(g.xyxy_lb, anchor_xyxy)
+                fn_anchor_idx = cam_trained.find_best_anchor(g.xyxy_lb, anchor_xyxy)
                 fn_raw_score = float(raw_out_tr[0, 4 + g.class_id, fn_anchor_idx].item())
-                cam_fn = gradcam_trained.compute_cam_for_anchor(
+                cams_fn = cam_trained.compute_cams_for_anchor(
                     raw_out=raw_out_tr,
                     anchor_idx=fn_anchor_idx,
                     class_id=g.class_id,
                     lb=lb,
+                    methods=METHODS,
                 )
-                panel_fn = render_gradcam_panel(
+                fn_saved_count += 1
+                single_fn = render_single_method_panel(
                     img_bgr=img_bgr,
-                    cam_orig=cam_fn,
+                    cam_orig=cams_fn[args.method],
                     box_orig=g.xyxy_orig,
-                    title_str=f"[KAÇIRILAN HATA - FN] {img_path.stem} (En yakın anchor skoru={fn_raw_score:.3f})",
+                    title_str=f"[{args.method.upper()} - FN] {img_path.stem} (En yakın anchor skoru={fn_raw_score:.3f})",
                     label_str=f"GT (FN): {g.class_name}",
                     box_color_rgb=(255, 200, 0),
                 )
-                fn_examples.append((panel_fn, f"fn_{g.class_name}_{img_path.stem}.png"))
-                if len(fn_examples) >= 2:
+                cmp_fn = render_three_method_compare_panel(
+                    img_bgr=img_bgr,
+                    cams_by_method=cams_fn,
+                    box_orig=g.xyxy_orig,
+                    header_str=(
+                        f"[KAÇIRILAN HATA - FN] {img_path.stem} (GT: {g.class_name}, en yakın anchor skoru={fn_raw_score:.3f}) "
+                        f"— Grad-CAM vs HiResCAM vs LayerCAM"
+                    ),
+                    label_str=f"GT (FN): {g.class_name}",
+                    box_color_rgb=(255, 200, 0),
+                )
+                save_rgb_image(single_fn, out_dir / f"fn_{fn_saved_count}_{g.class_name}_{img_path.stem}.png")
+                save_rgb_image(cmp_fn, out_dir / f"compare_fn_{fn_saved_count}_{g.class_name}_{img_path.stem}.png")
+                if fn_saved_count >= 2:
                     break
 
-    gradcam_trained.close()
-    gradcam_rand.close()
+    cam_trained.close()
+    cam_rand.close()
 
-    # FP ve FN görsellerini kaydet
-    for idx, (_, panel_fp, fname_fp) in enumerate(fp_examples, start=1):
-        save_rgb_image(panel_fp, out_dir / f"fp_{idx}_{fname_fp[3:]}")
-    for idx, (panel_fn, fname_fn) in enumerate(fn_examples, start=1):
-        save_rgb_image(panel_fn, out_dir / f"fn_{idx}_{fname_fn[3:]}")
+    for idx, (_, single_fp, cmp_fp, suffix) in enumerate(fp_candidates, start=1):
+        save_rgb_image(single_fp, out_dir / f"fp_{idx}_{suffix}")
+        save_rgb_image(cmp_fp, out_dir / f"compare_fp_{idx}_{suffix}")
 
-    # Toplu özet görselleri (6 sınıf TP ızgarası + 2 FP / 2 FN hata analizi ızgarası)
-    if tp_examples:
+    if tp_single_panels:
         fig_tp, axes_tp = plt.subplots(3, 2, figsize=(18, 16))
-        for ax, cls_id in zip(axes_tp.flatten(), sorted(tp_examples.keys())):
-            ax.imshow(tp_examples[cls_id][0])
+        for ax, cls_id in zip(axes_tp.flatten(), sorted(tp_single_panels.keys())):
+            ax.imshow(tp_single_panels[cls_id])
             ax.axis("off")
         plt.suptitle(
-            f"Grad-CAM Doğru Tespit Örnekleri (6 Sınıf) — {model_label} (katman={target_layer_idx})",
+            f"{args.method.upper()} Doğru Tespit Örnekleri (6 Sınıf) — {model_label} (katman={target_layer_idx})",
             fontsize=15,
             fontweight="bold",
         )
@@ -676,62 +823,54 @@ def main() -> None:
         plt.savefig(out_dir / "gradcam_tp_6classes.png", dpi=130, bbox_inches="tight")
         plt.close(fig_tp)
 
-    err_panels = [p for _, p, _ in fp_examples] + [p for p, _ in fn_examples]
-    if err_panels:
-        fig_err, axes_err = plt.subplots(2, 2, figsize=(18, 11))
-        for ax, pnl in zip(axes_err.flatten(), err_panels):
-            ax.imshow(pnl)
-            ax.axis("off")
-        plt.suptitle(
-            f"Grad-CAM Hata Analizi (Üst: 2 Yanlış Pozitif [FP], Alt: 2 Kaçırılan Hata [FN]) — {model_label}",
-            fontsize=14,
-            fontweight="bold",
-        )
-        plt.tight_layout()
-        plt.savefig(out_dir / "gradcam_errors_fp_fn.png", dpi=130, bbox_inches="tight")
-        plt.close(fig_err)
-
-    pointing_rate = pointing_hits / n_tp if n_tp > 0 else 0.0
-    chance_mean = float(np.mean(chance_rates)) if chance_rates else 0.0
-    spearman_med = float(np.median(spearman_corrs)) if spearman_corrs else 0.0
-    spearman_mean = float(np.mean(spearman_corrs)) if spearman_corrs else 0.0
+    chance_own = float(np.mean(img_chance_own_list)) if img_chance_own_list else 0.0
+    chance_any = float(np.mean(img_chance_any_list)) if img_chance_any_list else 0.0
 
     sanity_csv = REPO_ROOT / "results" / "gradcam_sanity.csv"
-    sanity_row = {
-        "model": model_label,
-        "imgsz": args.imgsz,
-        "katman": target_layer_idx,
-        "n_tespit": n_tp,
-        "pointing_game": round(pointing_rate, 4),
-        "şans_oranı": round(chance_mean, 6),
-        "randomizasyon_spearman_medyan": round(spearman_med, 4),
-    }
+    new_rows: list[dict[str, object]] = []
+    for m_name in METHODS:
+        pg_own = hits_own_box[m_name] / n_tp if n_tp > 0 else 0.0
+        pg_any = hits_any_box[m_name] / n_tp if n_tp > 0 else 0.0
+        sp_med = float(np.median(spearman_corrs[m_name])) if spearman_corrs[m_name] else 0.0
+        new_rows.append(
+            {
+                "model": model_label,
+                "imgsz": args.imgsz,
+                "katman": target_layer_idx,
+                "method": m_name,
+                "n_tespit": n_tp,
+                "kendi_kutu": round(pg_own, 4),
+                "şans_kendi_kutu": round(chance_own, 6),
+                "herhangi_kutu": round(pg_any, 4),
+                "şans_herhangi_kutu": round(chance_any, 6),
+                "randomizasyon_spearman_medyan": round(sp_med, 4),
+            }
+        )
 
     existing_rows: list[dict[str, object]] = []
     if sanity_csv.is_file():
         df_old = pd.read_csv(sanity_csv)
-        existing_rows = [
-            r
-            for r in df_old.to_dict(orient="records")
-            if (str(r.get("model")), int(r.get("imgsz", 0)), int(r.get("katman", -1)))
-            != (model_label, args.imgsz, target_layer_idx)
-        ]
-    existing_rows.append(sanity_row)
-    df_sanity = pd.DataFrame(existing_rows)
+        if "method" in df_old.columns:
+            new_keys = {(str(r["model"]), int(r["imgsz"]), int(r["katman"]), str(r["method"])) for r in new_rows}
+            existing_rows = [
+                r
+                for r in df_old.to_dict(orient="records")
+                if (str(r.get("model")), int(r.get("imgsz", 0)), int(r.get("katman", -1)), str(r.get("method")))
+                not in new_keys
+            ]
+
+    combined_rows = existing_rows + new_rows
+    df_sanity = pd.DataFrame(combined_rows)
     sanity_csv.parent.mkdir(parents=True, exist_ok=True)
     df_sanity.to_csv(sanity_csv, index=False, encoding="utf-8")
 
-    print("\n" + "=" * 78)
-    print("GRAD-CAM DOĞRULAMA (SANITY CHECK) SONUÇLARI")
-    print("=" * 78)
-    print(f"Doğru tespit sayısı (n_tespit, IoU>=0.5) : {n_tp}")
-    print(f"Pointing Game isabet oranı               : {pointing_rate:.4f} ({pointing_hits}/{n_tp})")
-    print(f"Rastgele nokta şans oranı (kutu/görüntü) : {chance_mean:.6f} ({pointing_rate / max(chance_mean, 1e-9):.1f}x şans üstü)")
-    print(f"Model Randomizasyon Spearman (medyan)    : {spearman_med:.4f} (ortalama: {spearman_mean:.4f})")
-    print(f"Kaydedilen görseller                     : {out_dir} ({len(list(out_dir.glob('*.png')))} PNG)")
-    print(f"Kaydedilen tablo                         : {sanity_csv}")
-    print("=" * 78)
+    print("\n" + "=" * 84)
+    print("CAM YÖNTEMLERİ KARŞILAŞTIRMA TABLOSU (Grad-CAM vs HiResCAM vs LayerCAM)")
+    print("=" * 84)
     print(df_sanity.to_string(index=False))
+    print("=" * 84)
+    print(f"Kaydedilen compare görselleri : {len(list(out_dir.glob('compare_*.png')))} adet ({out_dir})")
+    print(f"Kaydedilen CSV                : {sanity_csv}")
 
 
 if __name__ == "__main__":
