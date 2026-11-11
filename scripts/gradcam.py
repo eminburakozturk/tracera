@@ -3,19 +3,13 @@ mutlak bütçeli (1x/2x GT kutu alanı) yapısal kaydırmalı silme (deletion) s
 rapor özeti (results/xai_summary.md) ve val görsel üretimi (6 TP + 2 FP + 2 FN).
 
 Varsayılan kilitli ayar: --method layercam --layer 4
-ÖNEMLİ: Yalnızca CPU üzerinde (device='cpu') çalışır; GPU'ya dokunmaz.
 """
 
 from __future__ import annotations
 
 import argparse
 import copy
-import os
 import random
-
-# GPU kullanımını tamamen devre dışı bırak (arka planda çalışan GPU eğitimine dokunmamak için)
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,11 +26,13 @@ from ultralytics.utils.nms import non_max_suppression
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 METHODS: tuple[str, ...] = ("gradcam", "hirescam", "layercam")
-DELETION_ACTIVE_COMBOS: set[tuple[int, str]] = {
+SANITY_COMBOS: tuple[tuple[int, str], ...] = (
+    (4, "gradcam"),
     (4, "hirescam"),
     (4, "layercam"),
     (16, "layercam"),
-}
+)
+DELETION_ACTIVE_COMBOS: set[tuple[int, str]] = set(SANITY_COMBOS)
 
 
 @dataclass(frozen=True)
@@ -268,8 +264,9 @@ def compute_cam_pair_from_acts_grads(
 class MultiLayerYoloCAM:
     """Birden fazla hedef katman (ör. 16 ve 4) üzerinde tek forward/backward ile Grad-CAM/HiResCAM/LayerCAM üretici."""
 
-    def __init__(self, nn_model: nn.Module, layer_indices: list[int], imgsz: int) -> None:
-        self.nn_model = nn_model.to("cpu").eval()
+    def __init__(self, nn_model: nn.Module, layer_indices: list[int], imgsz: int, device: str = "cpu") -> None:
+        self.device = device
+        self.nn_model = nn_model.to(device).eval()
         self.layer_indices = sorted(set(layer_indices))
         self.imgsz = imgsz
         self.activations: dict[int, torch.Tensor] = {}
@@ -304,6 +301,7 @@ class MultiLayerYoloCAM:
     def forward_image(self, x: torch.Tensor) -> tuple[torch.Tensor, np.ndarray]:
         self.activations.clear()
         self.gradients.clear()
+        x = x.to(self.device)
         raw_out = self.nn_model(x)[0]
         xywh = raw_out[0, :4, :].detach().cpu().numpy().T
         x1 = xywh[:, 0] - xywh[:, 2] / 2.0
@@ -356,7 +354,7 @@ class MultiLayerYoloCAM:
             h.remove()  # type: ignore[attr-defined]
 
 
-def build_randomized_model(trained_nn_model: nn.Module, seed: int = 42) -> nn.Module:
+def build_randomized_model(trained_nn_model: nn.Module, seed: int = 42, device: str = "cpu") -> nn.Module:
     """Adebayo vd. (2018) model randomizasyon testi için aynı mimarinin ağırlıklarını rastgele başlatır."""
     rand_model = copy.deepcopy(trained_nn_model).to("cpu").eval()
     for m in rand_model.modules():
@@ -383,7 +381,7 @@ def build_randomized_model(trained_nn_model: nn.Module, seed: int = 42) -> nn.Mo
                     nn.init.zeros_(m.running_mean)
                 if m.running_var is not None:
                     nn.init.ones_(m.running_var)
-    return rand_model
+    return rand_model.to(device).eval()
 
 
 def load_gt_boxes(lbl_path: Path, lb: LetterboxTransform, class_names: dict[int, str]) -> list[GTBox]:
@@ -643,7 +641,8 @@ def evaluate_absolute_budget_deletion(
                 torch.from_numpy(img_ctrl[:, :, ::-1].transpose(2, 0, 1).copy()).float() / 255.0
             )
 
-    batch_tensor = torch.stack(perturbed_tensors, dim=0)
+    model_device = next(eval_model.parameters()).device
+    batch_tensor = torch.stack(perturbed_tensors, dim=0).to(model_device)
     with torch.inference_mode():
         batch_out = eval_model(batch_tensor)[0]
         scores = batch_out[:, 4 + class_id, anchor_idx].cpu().numpy()
@@ -906,51 +905,67 @@ def generate_val_visuals(
         print(f"  [GRID] Kaydedildi: {out_dir / 'gradcam_errors_fp_fn.png'}")
 
 
-def write_xai_summary_md(sanity_csv: Path, out_md: Path) -> None:
-    """results/gradcam_sanity.csv dosyasından rakamları doğrudan okuyarak results/xai_summary.md raporunu üretir."""
+def write_xai_summary_md(sanity_csv: Path, out_md: Path, target_model: str = "g_y11s_1024_full") -> None:
+    """results/gradcam_sanity.csv dosyasından yalnızca nihai model satırlarını okuyarak results/xai_summary.md raporunu üretir."""
     if not sanity_csv.is_file():
         raise FileNotFoundError(f"CSV bulunamadı: {sanity_csv}")
 
-    df = pd.read_csv(sanity_csv)
+    df_all = pd.read_csv(sanity_csv)
+    if target_model in df_all["model"].astype(str).values:
+        df = df_all[df_all["model"].astype(str) == target_model].copy().reset_index(drop=True)
+    else:
+        last_model = str(df_all["model"].iloc[-1])
+        df = df_all[df_all["model"].astype(str) == last_model].copy().reset_index(drop=True)
+
     by_key: dict[tuple[int, str], dict[str, object]] = {}
     for r in df.to_dict(orient="records"):
         by_key[(int(r["katman"]), str(r["method"]))] = r
+
+    combo_order: tuple[tuple[int, str, str], ...] = (
+        (4, "layercam", "Varsayılan"),
+        (4, "hirescam", "Karşılaştırma"),
+        (4, "gradcam", "Klasik CAM"),
+        (16, "layercam", "Referans"),
+    )
 
     # Tablo 1 satırları
     t1_lines = [
         "| Katman | Yöntem | $n$ | Eğitilmiş Model Pointing (`kendi_kutu`) | Rastgele Model Pointing (`pointing_rastgele_model`) | Şans Tabanı (`şans_kendi_kutu`) | Pencere Alan Oranı | Pencere İçi Randomizasyon Spearman (Medyan) | Pencere İçi Enerji Kutuda | Taban (`Kutu ∩ Pencere / Pencere`) |",
         "| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
     ]
-    for lid in (4, 16):
-        for m in ("layercam", "hirescam", "gradcam"):
-            r = by_key[(lid, m)]
-            pg_tr = float(r["kendi_kutu_tum_goruntu"])
-            pg_rn = float(r["pointing_rastgele_model"])
-            pg_ch = float(r["şans_kendi_kutu_tum_goruntu"])
-            w_area = float(r["pencere_alan_orani"])
-            sp_w = float(r["randomizasyon_spearman_medyan_pencere"])
-            en_w = float(r["enerji_kutuda_pencere"])
-            bs_w = float(r["taban_kutu_pencere"])
-            n_det = int(r["n_tespit"])
-            is_default = (lid == 4 and m == "layercam")
-            m_disp = f"**`{m}` (Varsayılan)**" if is_default else f"`{m}`"
-            t1_lines.append(
-                f"| **{lid}** | {m_disp} | {n_det} | "
-                f"{pg_tr:.4f} (%{pg_tr * 100:.2f}) | "
-                f"{pg_rn:.4f} (%{pg_rn * 100:.2f}) | "
-                f"{pg_ch:.6f} (%{pg_ch * 100:.2f}) | "
-                f"{w_area:.4f} (%{w_area * 100:.2f}) | "
-                f"{sp_w:.4f} | "
-                f"{en_w:.4f} (%{en_w * 100:.2f}) | "
-                f"{bs_w:.4f} (%{bs_w * 100:.2f}) |"
-            )
+    for lid, m, note in combo_order:
+        if (lid, m) not in by_key:
+            continue
+        r = by_key[(lid, m)]
+        pg_tr = float(r["kendi_kutu_tum_goruntu"])
+        pg_rn = float(r["pointing_rastgele_model"])
+        pg_ch = float(r["şans_kendi_kutu_tum_goruntu"])
+        w_area = float(r["pencere_alan_orani"])
+        sp_w = float(r["randomizasyon_spearman_medyan_pencere"])
+        en_w = float(r["enerji_kutuda_pencere"])
+        bs_w = float(r["taban_kutu_pencere"])
+        n_det = int(r["n_tespit"])
+        is_default = (lid == 4 and m == "layercam")
+        m_disp = f"**`{m}` ({note})**" if is_default else f"`{m}` ({note})"
+        t1_lines.append(
+            f"| **{lid}** | {m_disp} | {n_det} | "
+            f"{pg_tr:.4f} (%{pg_tr * 100:.2f}) | "
+            f"{pg_rn:.4f} (%{pg_rn * 100:.2f}) | "
+            f"{pg_ch:.6f} (%{pg_ch * 100:.2f}) | "
+            f"{w_area:.4f} (%{w_area * 100:.2f}) | "
+            f"{sp_w:.4f} | "
+            f"{en_w:.4f} (%{en_w * 100:.2f}) | "
+            f"{bs_w:.4f} (%{bs_w * 100:.2f}) |"
+        )
 
-    # Tablo 2 satırları (yalnızca silme testi uygulanan kombinasyonlar; oran sütunu YOK)
+    # Tablo 2 satırları (tüm kombinasyonlar mutlak bütçeli silme testi ile)
     t2_lines = [
         "| Katman | Yöntem | $1\\times$ Harita Düşüş (Ort / Med) | $1\\times$ Kontrol Düşüş (Ort / Med) | $1\\times$ Kazanma Oranı | $2\\times$ Harita Düşüş (Ort / Med) | $2\\times$ Kontrol Düşüş (Ort / Med) | $2\\times$ Kazanma Oranı |",
         "| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
     ]
-    for lid, m, note in ((4, "layercam", "Varsayılan"), (4, "hirescam", "Karşılaştırma"), (16, "layercam", "Referans")):
+    for lid, m, note in combo_order:
+        if (lid, m) not in by_key:
+            continue
         r = by_key[(lid, m)]
         m1_ort = float(r["goreli_dusus_harita_ort_1x"])
         m1_med = float(r["goreli_dusus_harita_med_1x"])
@@ -983,9 +998,52 @@ def write_xai_summary_md(sanity_csv: Path, out_md: Path) -> None:
     r4_hr = by_key[(4, "hirescam")]
     r4_gc = by_key[(4, "gradcam")]
     r16_lc = by_key[(16, "layercam")]
-    r16_gc = by_key[(16, "gradcam")]
 
-    # CSV'den dinamik 5 cümlelik yorum (KARARLAR.md 2026-11-12 XAI raporlama kuralları a, b, c, d + seçim gerekçesi)
+    # 5. cümle (Grad-CAM) için dinamik hesaplamalar
+    gc_pg = float(r4_gc["kendi_kutu_tum_goruntu"])
+    gc_any_pg = float(r4_gc["herhangi_kutu_tum_goruntu"])
+    gc_chance = float(r4_gc["şans_kendi_kutu_tum_goruntu"])
+    gc_pg_mult = gc_pg / gc_chance if gc_chance > 0 else 0.0
+    gc_en = float(r4_gc["enerji_kutuda_pencere"])
+    gc_bs = float(r4_gc["taban_kutu_pencere"])
+    gc_m1_ort = float(r4_gc["goreli_dusus_harita_ort_1x"])
+    gc_m1_med = float(r4_gc["goreli_dusus_harita_med_1x"])
+    gc_c1_ort = float(r4_gc["goreli_dusus_kontrol_ort_1x"])
+    gc_c1_med = float(r4_gc["goreli_dusus_kontrol_med_1x"])
+    if abs(gc_c1_med) < 1e-9:
+        gc_c1_med = 0.0
+    gc_w1 = float(r4_gc["goreli_kazanma_orani_1x"])
+    gc_m2_ort = float(r4_gc["goreli_dusus_harita_ort_2x"])
+    gc_m2_med = float(r4_gc["goreli_dusus_harita_med_2x"])
+    gc_c2_ort = float(r4_gc["goreli_dusus_kontrol_ort_2x"])
+    gc_c2_med = float(r4_gc["goreli_dusus_kontrol_med_2x"])
+    if abs(gc_c2_med) < 1e-9:
+        gc_c2_med = 0.0
+    gc_w2 = float(r4_gc["goreli_kazanma_orani_2x"])
+
+    lc_pg = float(r4_lc["kendi_kutu_tum_goruntu"])
+    lc_rn_pg = float(r4_lc["pointing_rastgele_model"])
+    lc_pg_vs_rn = lc_pg / lc_rn_pg if lc_rn_pg > 0 else 0.0
+
+    if gc_w1 <= 0.55 and gc_w2 <= 0.55 and abs(gc_m1_ort - gc_c1_ort) <= 0.02:
+        gc_del_verdict = (
+            f"silme testinde rastgele düzeyde kalmakta ve tespit bazlı açıklama için yetersiz olmaktadır."
+        )
+    elif gc_m1_ort > gc_c1_ort and gc_w1 > 0.55:
+        gc_del_verdict = (
+            f"dolayısıyla yapısal kaydırma kontrolünün üzerinde kısmi sadakat gösterse de hem silme düşüşü/kazanma "
+            f"oranında (`layercam`: $1\\times$ ort. **{float(r4_lc['goreli_dusus_harita_ort_1x']):.4f}**, kazanma "
+            f"**%{float(r4_lc['goreli_kazanma_orani_1x']) * 100:.2f}**) hem de pencere içi kutu enerjisinde "
+            f"(**%{gc_en * 100:.2f}** vs. taban **%{gc_bs * 100:.2f}**; `layercam`: **%{float(r4_lc['enerji_kutuda_pencere']) * 100:.2f}**) "
+            f"eleman bazlı yöntemlerin belirgin biçimde gerisinde kaldığından tespit bazlı açıklama için tercih edilmemiştir."
+        )
+    else:
+        gc_del_verdict = (
+            f"pencere içi kutu enerjisi (**%{gc_en * 100:.2f}** vs. taban **%{gc_bs * 100:.2f}**) ve silme sadakati "
+            f"açısından eleman bazlı yöntemlerin (`layercam` ve `hirescam`) gerisinde kaldığından tespit bazlı açıklama için tercih edilmemiştir."
+        )
+
+    # CSV'den dinamik 5 cümlelik yorum (KARARLAR.md 2026-11-12 XAI raporlama kuralları a, b, c, d + düzeltme kararı)
     s1 = (
         f"1. **Mutlak Bütçeli Yapısal Silme Sadakati (Kural a):** Geniş gradyan desteğine sahip backbone Katman 4'te "
         f"(pencere alanı görüntünün %{float(r4_lc['pencere_alan_orani']) * 100:.2f}'i), GT kutu alanının $1\\times$ ve $2\\times$ "
@@ -1001,7 +1059,7 @@ def write_xai_summary_md(sanity_csv: Path, out_md: Path) -> None:
     )
     s2 = (
         f"2. **Varsayılan Yöntem Seçimi (`LayerCAM @ Katman 4`):** Katman 4 silme testinde `layercam` ve `hirescam` "
-        f"sadakat açısından eşdeğer performans gösterse de (`1x` harita düşüş ortalaması **{float(r4_lc['goreli_dusus_harita_ort_1x']):.4f}** vs. "
+        f"sadakat açısından çok yakın performans gösterse de (`1x` harita düşüş ortalaması **{float(r4_lc['goreli_dusus_harita_ort_1x']):.4f}** vs. "
         f"**{float(r4_hr['goreli_dusus_harita_ort_1x']):.4f}**), `layercam` pozitif gradyan kapılaması sayesinde pencere içi harita enerjisinin "
         f"**%{float(r4_lc['enerji_kutuda_pencere']) * 100:.2f}**'unu doğrudan GT kutusu içine odaklamakta (`hirescam`: "
         f"**%{float(r4_hr['enerji_kutuda_pencere']) * 100:.2f}**, düzgün harita tabanı: **%{float(r4_lc['taban_kutu_pencere']) * 100:.2f}**) "
@@ -1009,11 +1067,11 @@ def write_xai_summary_md(sanity_csv: Path, out_md: Path) -> None:
     )
     s3 = (
         f"3. **Pointing Game Üçlüsü ve Mimari Katkı (Kural b):** Katman 4'te `layercam` kendi GT kutusuna pointing testinde "
-        f"**%{float(r4_lc['kendi_kutu_tum_goruntu']) * 100:.2f}** (`hirescam`: **%{float(r4_hr['kendi_kutu_tum_goruntu']) * 100:.2f}**) "
-        f"başarı sağlarken, rastgele ağırlıklı aynı mimarinin **%{float(r4_lc['pointing_rastgele_model']) * 100:.2f}** "
+        f"**%{lc_pg * 100:.2f}** (`hirescam`: **%{float(r4_hr['kendi_kutu_tum_goruntu']) * 100:.2f}**) "
+        f"başarı sağlarken, rastgele ağırlıklı aynı mimarinin **%{lc_rn_pg * 100:.2f}** "
         f"(`hirescam`: **%{float(r4_hr['pointing_rastgele_model']) * 100:.2f}**) ve şans tabanının "
         f"**%{float(r4_lc['şans_kendi_kutu_tum_goruntu']) * 100:.2f}** çıkması, anchor merkezli etkin alıcı alanın (effective receptive field) "
-        f"mimari bir temel oluşturduğunu ancak öğrenilmiş ağırlıkların isabet oranını iki katına çıkardığını (pencere içi randomizasyon Spearman medyanı "
+        f"mimari bir temel oluşturduğunu ancak öğrenilmiş ağırlıkların isabet oranını **{lc_pg_vs_rn:.2f} katına** çıkardığını (pencere içi randomizasyon Spearman medyanı "
         f"**{float(r4_lc['randomizasyon_spearman_medyan_pencere']):.4f}**) dürüstçe göstermektedir."
     )
     s4 = (
@@ -1025,11 +1083,14 @@ def write_xai_summary_md(sanity_csv: Path, out_md: Path) -> None:
         f"uygun bulunmamaktadır."
     )
     s5 = (
-        f"5. **Neden Klasik Grad-CAM Değil? (Kural d):** Klasik `gradcam`, gradyanların uzamsal ortalamasını alarak konum bilgisini "
-        f"yok ettiği için çoklu kusur barındıran PCB kartlarında kendi kutusuna pointing oranında (**%{float(r4_gc['kendi_kutu_tum_goruntu']) * 100:.2f}** "
-        f"@ Katman 4, **%{float(r16_gc['kendi_kutu_tum_goruntu']) * 100:.2f}** @ Katman 16) ve pencere içi kutu enerjisinde "
-        f"(Katman 4'te **%{float(r4_gc['enerji_kutuda_pencere']) * 100:.2f}** vs. taban **%{float(r4_gc['taban_kutu_pencere']) * 100:.2f}**) "
-        f"rastgele düzeyde kalmakta, dolayısıyla tespit bazlı açıklama için kullanılamamaktadır."
+        f"5. **Klasik Grad-CAM Analizi (Kural d):** Katman 4'te klasik `gradcam`, gradyanların uzamsal ortalamasını alarak "
+        f"kanal ağırlığı ürettiği için çoklu kusur barındıran PCB kartlarında kendi kutusuna pointing oranında "
+        f"**%{gc_pg * 100:.2f}** ile şans tabanının (**%{gc_chance * 100:.2f}**) **{gc_pg_mult:.1f} katına** ulaşsa da "
+        f"(herhangi bir GT kutusuna pointing: **%{gc_any_pg * 100:.2f}**), mutlak bütçeli silme testinde harita düşüşü "
+        f"$1\\times$'te ort. **{gc_m1_ort:.4f}** (medyan **{gc_m1_med:.4f}**) vs. kontrol düşüşü ort. **{gc_c1_ort:.4f}** "
+        f"(medyan **{gc_c1_med:.4f}**, kazanma oranı **%{gc_w1 * 100:.2f}**) ve $2\\times$'te harita düşüşü ort. **{gc_m2_ort:.4f}** "
+        f"(medyan **{gc_m2_med:.4f}**) vs. kontrol düşüşü ort. **{gc_c2_ort:.4f}** (medyan **{gc_c2_med:.4f}**, kazanma oranı "
+        f"**%{gc_w2 * 100:.2f}**) olarak ölçülmüştür; {gc_del_verdict}"
     )
 
     md_content = "\n".join(
@@ -1065,19 +1126,19 @@ def write_xai_summary_md(sanity_csv: Path, out_md: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tracera Yerel CAM Doğrulama Protokolü, Yapısal Silme Testi ve Val Görsel Üretimi [CPU]"
+        description="Tracera Yerel CAM Doğrulama Protokolü, Yapısal Silme Testi ve Val Görsel Üretimi"
     )
     parser.add_argument(
         "--weights",
         type=Path,
-        default=Path("runs/detect/g_y11s_640/weights/best.pt"),
-        help="Model ağırlık dosyası (varsayılan: runs/detect/g_y11s_640/weights/best.pt)",
+        default=Path("runs/detect/g_y11s_1024_full/weights/last.pt"),
+        help="Model ağırlık dosyası (varsayılan: runs/detect/g_y11s_1024_full/weights/last.pt)",
     )
     parser.add_argument(
         "--imgsz",
         type=int,
-        default=640,
-        help="Görüntü boyutu (varsayılan: 640)",
+        default=1024,
+        help="Görüntü boyutu (varsayılan: 1024)",
     )
     parser.add_argument(
         "--data",
@@ -1103,8 +1164,8 @@ def parse_args() -> argparse.Namespace:
         "--layer",
         type=int,
         nargs="+",
-        default=[4],
-        help="Kilitli varsayılan hedef katman (varsayılan: 4)",
+        default=[4, 16],
+        help="Hedef katman(lar) (varsayılan: 4 16)",
     )
     parser.add_argument(
         "--max-dets",
@@ -1129,6 +1190,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.45,
         help="NMS IoU eşiği (varsayılan: 0.45)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda:0" if torch.cuda.is_available() else "cpu",
+        help="Çalıştırma cihazı (varsayılan: cuda:0 varsa GPU, yoksa cpu)",
     )
     parser.add_argument(
         "--visuals-only",
@@ -1201,8 +1268,9 @@ def main() -> None:
         )
         return
 
-    trained_nn = copy.deepcopy(yolo_obj.model).to("cpu").eval()
-    eval_nn = copy.deepcopy(yolo_obj.model).fuse().to("cpu").eval()
+    device = args.device
+    trained_nn = copy.deepcopy(yolo_obj.model).to(device).eval()
+    eval_nn = copy.deepcopy(yolo_obj.model).fuse().to(device).eval()
 
     detect_head = trained_nn.model[-1]
     detect_f: list[int] = list(getattr(detect_head, "f", [16, 19, 22]))
@@ -1213,10 +1281,14 @@ def main() -> None:
         else weights_path.stem
     )
 
+    active_combos: list[tuple[int, str]] = [
+        (lid, m_name) for (lid, m_name) in SANITY_COMBOS if lid in target_layers
+    ]
+
     print("=" * 96)
     print(
-        f"TRACERA MUTLAK BÜTÇELİ (1x/2x) YAPISAL SİLME TESTİ + RASTGELE MODEL POINTING (CPU)\n"
-        f"model={csv_model_label} | imgsz={args.imgsz} | max_dets={args.max_dets} | aktif_silme={sorted(DELETION_ACTIVE_COMBOS)}"
+        f"TRACERA MUTLAK BÜTÇELİ (1x/2x) YAPISAL SİLME TESTİ + RASTGELE MODEL POINTING ({device})\n"
+        f"model={csv_model_label} | imgsz={args.imgsz} | max_dets={args.max_dets} | kombinasyonlar={active_combos}"
     )
     print(f"Detect modülü .f listesi : {detect_f}")
     print("=" * 96)
@@ -1250,6 +1322,7 @@ def main() -> None:
                 torch.from_numpy(lb.img_lb[:, :, ::-1].transpose(2, 0, 1).copy())
                 .float()
                 .unsqueeze(0)
+                .to(device)
                 / 255.0
             )
             raw_pred = eval_nn(x_t)[0]
@@ -1302,21 +1375,21 @@ def main() -> None:
     n_eval = len(sampled_tps)
     print(f"Toplam doğru tespit: {len(all_tps)} | Örneklenen tespit (seed={args.seed}): {n_eval}")
 
-    rand_nn = build_randomized_model(yolo_obj.model, seed=args.seed)
-    cam_trained = MultiLayerYoloCAM(trained_nn, layer_indices=target_layers, imgsz=args.imgsz)
-    cam_rand = MultiLayerYoloCAM(rand_nn, layer_indices=target_layers, imgsz=args.imgsz)
+    rand_nn = build_randomized_model(yolo_obj.model, seed=args.seed, device=device)
+    cam_trained = MultiLayerYoloCAM(trained_nn, layer_indices=target_layers, imgsz=args.imgsz, device=device)
+    cam_rand = MultiLayerYoloCAM(rand_nn, layer_indices=target_layers, imgsz=args.imgsz, device=device)
 
-    hits_own_full: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
-    hits_any_full: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
-    hits_own_rand_model: dict[tuple[int, str], int] = {(l, m): 0 for l in target_layers for m in METHODS}
-    spearman_full: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
-    spearman_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
-    energy_in_gt_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
-    base_in_gt_win: dict[tuple[int, str], list[float]] = {(l, m): [] for l in target_layers for m in METHODS}
+    hits_own_full: dict[tuple[int, str], int] = {k: 0 for k in active_combos}
+    hits_any_full: dict[tuple[int, str], int] = {k: 0 for k in active_combos}
+    hits_own_rand_model: dict[tuple[int, str], int] = {k: 0 for k in active_combos}
+    spearman_full: dict[tuple[int, str], list[float]] = {k: [] for k in active_combos}
+    spearman_win: dict[tuple[int, str], list[float]] = {k: [] for k in active_combos}
+    energy_in_gt_win: dict[tuple[int, str], list[float]] = {k: [] for k in active_combos}
+    base_in_gt_win: dict[tuple[int, str], list[float]] = {k: [] for k in active_combos}
     win_area_ratios: dict[int, list[float]] = {l: [] for l in target_layers}
 
     rel_del_records: dict[tuple[int, str, str], list[tuple[float, float]]] = {
-        (l, m, b): [] for (l, m) in DELETION_ACTIVE_COMBOS for b in ("1x", "2x")
+        (l, m, b): [] for (l, m) in active_combos for b in ("1x", "2x")
     }
 
     np_rng = np.random.default_rng(args.seed)
@@ -1367,7 +1440,8 @@ def main() -> None:
                 _, cams_rn = rn_extracted[lid]
                 win_area_ratios[lid].append(win.area_ratio)
 
-                for m_name in METHODS:
+                layer_methods = [m for (l_idx, m) in active_combos if l_idx == lid]
+                for m_name in layer_methods:
                     cam_lb_tr, cam_orig_tr = cams_tr[m_name]
                     _, cam_orig_rn = cams_rn[m_name]
 
@@ -1426,76 +1500,72 @@ def main() -> None:
     chance_own_full = float(np.mean(img_chance_own_list)) if img_chance_own_list else 0.0
     chance_any_full = float(np.mean(img_chance_any_list)) if img_chance_any_list else 0.0
 
-    prev_map: dict[tuple[int, str], dict[str, object]] = {}
+    rows: list[dict[str, object]] = []
+    for lid, m_name in active_combos:
+        mean_win_area = float(np.mean(win_area_ratios[lid])) if win_area_ratios[lid] else 0.0
+        key = (lid, m_name)
+        pg_own_f = hits_own_full[key] / n_eval if n_eval > 0 else 0.0
+        pg_any_f = hits_any_full[key] / n_eval if n_eval > 0 else 0.0
+        pg_rand_m = hits_own_rand_model[key] / n_eval if n_eval > 0 else 0.0
+        sp_full_med = float(np.median(spearman_full[key])) if spearman_full[key] else 0.0
+        sp_win_med = float(np.median(spearman_win[key])) if spearman_win[key] else 0.0
+        e_win_mean = float(np.mean(energy_in_gt_win[key])) if energy_in_gt_win[key] else 0.0
+        b_win_mean = float(np.mean(base_in_gt_win[key])) if base_in_gt_win[key] else 0.0
+
+        row: dict[str, object] = {
+            "model": csv_model_label,
+            "imgsz": args.imgsz,
+            "katman": lid,
+            "method": m_name,
+            "n_tespit": n_eval,
+            "kendi_kutu_tum_goruntu": round(pg_own_f, 4),
+            "pointing_rastgele_model": round(pg_rand_m, 4),
+            "şans_kendi_kutu_tum_goruntu": round(chance_own_full, 6),
+            "herhangi_kutu_tum_goruntu": round(pg_any_f, 4),
+            "şans_herhangi_kutu_tum_goruntu": round(chance_any_full, 6),
+            "randomizasyon_spearman_medyan_tum_goruntu": round(sp_full_med, 4),
+            "pencere_alan_orani": round(mean_win_area, 4),
+            "randomizasyon_spearman_medyan_pencere": round(sp_win_med, 4),
+            "enerji_kutuda_pencere": round(e_win_mean, 4),
+            "taban_kutu_pencere": round(b_win_mean, 4),
+        }
+
+        for b_key in ("1x", "2x"):
+            recs = rel_del_records[(lid, m_name, b_key)]
+            map_drops = np.asarray([x[0] for x in recs], dtype=np.float64)
+            ctrl_drops = np.asarray([x[1] for x in recs], dtype=np.float64)
+            wins = float(np.mean(map_drops > ctrl_drops)) if len(recs) > 0 else 0.0
+            mean_m = float(np.mean(map_drops))
+            mean_c = float(np.mean(ctrl_drops))
+            med_m = float(np.median(map_drops))
+            med_c = float(np.median(ctrl_drops))
+
+            def _clean_r(val: float) -> float:
+                r_val = round(val, 4)
+                return 0.0 if abs(r_val) < 1e-9 else r_val
+
+            row[f"goreli_dusus_harita_ort_{b_key}"] = _clean_r(mean_m)
+            row[f"goreli_dusus_harita_med_{b_key}"] = _clean_r(med_m)
+            row[f"goreli_dusus_kontrol_ort_{b_key}"] = _clean_r(mean_c)
+            row[f"goreli_dusus_kontrol_med_{b_key}"] = _clean_r(med_c)
+            row[f"goreli_kazanma_orani_{b_key}"] = _clean_r(wins)
+
+        rows.append(row)
+
+    df_new = pd.DataFrame(rows)
     if sanity_csv.is_file():
         df_prev = pd.read_csv(sanity_csv)
-        for r in df_prev.to_dict(orient="records"):
-            prev_map[(int(r.get("katman", -1)), str(r.get("method", "")))] = r
+        df_kept = df_prev[df_prev["model"].astype(str) != csv_model_label]
+        df_sanity = pd.concat([df_kept, df_new], ignore_index=True)
+    else:
+        df_sanity = df_new
 
-    rows: list[dict[str, object]] = []
-    for lid in target_layers:
-        mean_win_area = float(np.mean(win_area_ratios[lid])) if win_area_ratios[lid] else 0.0
-        for m_name in METHODS:
-            key = (lid, m_name)
-            pg_own_f = hits_own_full[key] / n_eval if n_eval > 0 else 0.0
-            pg_any_f = hits_any_full[key] / n_eval if n_eval > 0 else 0.0
-            pg_rand_m = hits_own_rand_model[key] / n_eval if n_eval > 0 else 0.0
-            sp_full_med = float(np.median(spearman_full[key])) if spearman_full[key] else 0.0
-            sp_win_med = float(np.median(spearman_win[key])) if spearman_win[key] else 0.0
-            e_win_mean = float(np.mean(energy_in_gt_win[key])) if energy_in_gt_win[key] else 0.0
-            b_win_mean = float(np.mean(base_in_gt_win[key])) if base_in_gt_win[key] else 0.0
-
-            row: dict[str, object] = {
-                "model": csv_model_label,
-                "imgsz": args.imgsz,
-                "katman": lid,
-                "method": m_name,
-                "n_tespit": n_eval,
-                "kendi_kutu_tum_goruntu": round(pg_own_f, 4),
-                "pointing_rastgele_model": round(pg_rand_m, 4),
-                "şans_kendi_kutu_tum_goruntu": round(chance_own_full, 6),
-                "herhangi_kutu_tum_goruntu": round(pg_any_f, 4),
-                "şans_herhangi_kutu_tum_goruntu": round(chance_any_full, 6),
-                "randomizasyon_spearman_medyan_tum_goruntu": round(sp_full_med, 4),
-                "pencere_alan_orani": round(mean_win_area, 4),
-                "randomizasyon_spearman_medyan_pencere": round(sp_win_med, 4),
-                "enerji_kutuda_pencere": round(e_win_mean, 4),
-                "taban_kutu_pencere": round(b_win_mean, 4),
-            }
-
-            if key in DELETION_ACTIVE_COMBOS:
-                for b_key in ("1x", "2x"):
-                    recs = rel_del_records[(lid, m_name, b_key)]
-                    map_drops = np.asarray([x[0] for x in recs], dtype=np.float64)
-                    ctrl_drops = np.asarray([x[1] for x in recs], dtype=np.float64)
-                    wins = float(np.mean(map_drops > ctrl_drops)) if len(recs) > 0 else 0.0
-                    mean_m = float(np.mean(map_drops))
-                    mean_c = float(np.mean(ctrl_drops))
-                    med_m = float(np.median(map_drops))
-                    med_c = float(np.median(ctrl_drops))
-
-                    row[f"goreli_dusus_harita_ort_{b_key}"] = round(mean_m, 4)
-                    row[f"goreli_dusus_harita_med_{b_key}"] = round(med_m, 4)
-                    row[f"goreli_dusus_kontrol_ort_{b_key}"] = round(mean_c, 4)
-                    row[f"goreli_dusus_kontrol_med_{b_key}"] = round(med_c, 4)
-                    row[f"goreli_kazanma_orani_{b_key}"] = round(wins, 4)
-            else:
-                old_r = prev_map.get(key, {})
-                for b_key in ("1x", "2x"):
-                    row[f"goreli_dusus_harita_ort_{b_key}"] = old_r.get(f"goreli_dusus_harita_ort_{b_key}", float("nan"))
-                    row[f"goreli_dusus_harita_med_{b_key}"] = old_r.get(f"goreli_dusus_harita_med_{b_key}", float("nan"))
-                    row[f"goreli_dusus_kontrol_ort_{b_key}"] = old_r.get(f"goreli_dusus_kontrol_ort_{b_key}", float("nan"))
-                    row[f"goreli_dusus_kontrol_med_{b_key}"] = old_r.get(f"goreli_dusus_kontrol_med_{b_key}", float("nan"))
-                    row[f"goreli_kazanma_orani_{b_key}"] = old_r.get(f"goreli_kazanma_orani_{b_key}", float("nan"))
-
-            rows.append(row)
-
-    df_sanity = pd.DataFrame(rows)
     sanity_csv.parent.mkdir(parents=True, exist_ok=True)
     df_sanity.to_csv(sanity_csv, index=False, encoding="utf-8")
+    print(f"[KAYDEDİLDİ] Sanity CSV: {sanity_csv} (toplam {len(df_sanity)} satır, yeni {len(df_new)} satır)")
 
-    if len(df_sanity) >= 6:
-        write_xai_summary_md(sanity_csv, summary_md)
+    if len(df_new) >= 4:
+        write_xai_summary_md(sanity_csv, summary_md, target_model=csv_model_label)
 
 
 if __name__ == "__main__":
