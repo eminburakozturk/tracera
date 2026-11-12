@@ -24,22 +24,40 @@ import pandas as pd
 import torch
 from ultralytics import YOLO
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+BASE_DIR = Path(__file__).resolve().parent
 
-from scripts.gradcam import (
-    MultiLayerYoloCAM,
-    box_orig_to_lb,
-    letterbox_image,
-    make_overlay_and_zoom,
-)
+# Hugging Face Space düzeni (kendi kendine yeten paket yapısı) veya repo düzeni tespiti
+if (BASE_DIR / "weights").exists() and (BASE_DIR / "tracera_xai").exists():
+    WEIGHTS_DIR = BASE_DIR / "weights"
+    EXAMPLES_DIR = BASE_DIR / "examples"
+    RESULTS_DIR = BASE_DIR / "results"
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    from tracera_xai.gradcam import (
+        MultiLayerYoloCAM,
+        box_orig_to_lb,
+        letterbox_image,
+        make_overlay_and_zoom,
+    )
+else:
+    REPO_ROOT = BASE_DIR.parent
+    WEIGHTS_DIR = REPO_ROOT / "runs" / "detect" / "g_y11s_1024_full" / "weights"
+    EXAMPLES_DIR = BASE_DIR / "examples"
+    RESULTS_DIR = REPO_ROOT / "results"
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.gradcam import (
+        MultiLayerYoloCAM,
+        box_orig_to_lb,
+        letterbox_image,
+        make_overlay_and_zoom,
+    )
 
 # -----------------------------------------------------------------------------
 # Ağırlık ve Model Sabitleri (HuggingFace Spaces / yerel dağıtım için merkezi)
 # -----------------------------------------------------------------------------
-OPENVINO_MODEL_PATH = REPO_ROOT / "runs/detect/g_y11s_1024_full/weights/last_int8_openvino_model"
-PYTORCH_MODEL_PATH = REPO_ROOT / "runs/detect/g_y11s_1024_full/weights/last.pt"
+OPENVINO_MODEL_PATH = WEIGHTS_DIR / "last_int8_openvino_model"
+PYTORCH_MODEL_PATH = WEIGHTS_DIR / "last.pt"
 IMGSZ = 1024
 DEFAULT_CONF = 0.395
 DEFAULT_IOU = 0.50
@@ -67,8 +85,8 @@ CLASS_COLORS = {
 # -----------------------------------------------------------------------------
 def load_dynamic_metrics_markdown() -> str:
     """results/*.csv dosyalarından güncel ve doğrulanmış metrikleri dinamik çeker."""
-    op_path = REPO_ROOT / "results" / "operating_point.csv"
-    bench_path = REPO_ROOT / "results" / "edge_benchmark.csv"
+    op_path = RESULTS_DIR / "operating_point.csv"
+    bench_path = RESULTS_DIR / "edge_benchmark.csv"
 
     md_lines = [
         "### 📊 Raporlanan Doğrulanmış Model Metrikleri (Dinamik Kaynak: `results/*.csv`)",
@@ -120,9 +138,9 @@ def load_dynamic_metrics_markdown() -> str:
 
     md_lines.extend([
         "> [!WARNING] **Kart Tasarımı Limitasyonu ve Güvenilirlik Notu:**",
-        "> Model 10 farklı PCB kart tasarımında gruplu split ile eğitilmiştir. Yeni ve görülmemiş bir kart tasarımında ",
+        "> Model, 10 kartlık PKU-Market-PCB setinin 6 kartında eğitildi (2 kart val, 2 kart test). Yeni ve görülmemiş bir kart tasarımında ",
         "> sabit arka plan özellikleri (ör. üretim şablon artifactları) yanlış alarmlara yol açabilir. ",
-        "> Test setinde şablon kaynaklı 3 sabit nokta hariç tutulduğunda F1 skoru **%91.13** (Precision %93.69, Recall %88.70) seviyesindedir.",
+        "> Test setinde şablon kaynaklı tekrarlayan sabit noktalar hariç tutulduğunda F1 skoru **%91.13** (Precision %93.69, Recall %88.70) seviyesindedir.",
         "",
         "> [!NOTE] **XAI Açıklanabilirlik Metodolojisi:**",
         "> Açıklamalar için **LayerCAM (Katman 4)** kullanılmaktadır. Katman 4 (backbone stride 8), "
@@ -365,10 +383,10 @@ def run_explainability(
 # -----------------------------------------------------------------------------
 def build_app() -> gr.Blocks:
     val_examples = [
-        [str(REPO_ROOT / "app/examples/val_05_missing_hole_01.jpg"), DEFAULT_CONF],
-        [str(REPO_ROOT / "app/examples/val_05_short_01.jpg"), DEFAULT_CONF],
-        [str(REPO_ROOT / "app/examples/val_11_mouse_bite_01.jpg"), DEFAULT_CONF],
-        [str(REPO_ROOT / "app/examples/val_11_spur_01.jpg"), DEFAULT_CONF],
+        [str(EXAMPLES_DIR / "val_05_missing_hole_01.jpg"), DEFAULT_CONF],
+        [str(EXAMPLES_DIR / "val_05_short_01.jpg"), DEFAULT_CONF],
+        [str(EXAMPLES_DIR / "val_11_mouse_bite_01.jpg"), DEFAULT_CONF],
+        [str(EXAMPLES_DIR / "val_11_spur_01.jpg"), DEFAULT_CONF],
     ]
 
     with gr.Blocks(title="Tracera - PCB Hata Tespiti & XAI") as demo:
@@ -454,5 +472,5 @@ def build_app() -> gr.Blocks:
 
 if __name__ == "__main__":
     app = build_app()
-    # Yerel başlatma: launch()
-    app.launch(server_name="127.0.0.1", server_port=7860, share=False)
+    server_name = "0.0.0.0" if os.environ.get("SPACE_ID") else "127.0.0.1"
+    app.launch(server_name=server_name, server_port=7860, share=False)
