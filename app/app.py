@@ -14,8 +14,19 @@ import sys
 import time
 from pathlib import Path
 
-# GPU'ya dokunma: Sadece CPU kullanımı zorunlu
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+try:
+    import spaces
+except ImportError:
+    spaces = None
+
+if spaces is not None:
+    @spaces.GPU
+    def _zerogpu_dummy():
+        """ZeroGPU ortamının donanımı tanıması için boş yer tutucu fonksiyon."""
+        return None
+else:
+    # Yerel ortamda GPU kullanımını sınırla
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import cv2
 import gradio as gr

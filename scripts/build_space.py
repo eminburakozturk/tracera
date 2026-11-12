@@ -140,13 +140,13 @@ def build_space(output_dir: Path) -> dict[str, object]:
         raise FileNotFoundError(f"Edge benchmark tablosu bulunamadı: {SRC_EDGE_BENCHMARK}")
     shutil.copy2(SRC_EDGE_BENCHMARK, results_dir / "edge_benchmark.csv")
 
-    # 7. requirements.txt
+    # 7. requirements.txt (ZeroGPU uyumu: torch 2.11.0, torchvision 0.26.0, spaces)
     print("📋 [build_space] requirements.txt üretiliyor...")
     pkg_versions = get_package_versions()
     req_lines = [
-        "--extra-index-url https://download.pytorch.org/whl/cpu",
-        f"torch=={pkg_versions['torch']}",
-        f"torchvision=={pkg_versions['torchvision']}",
+        "torch==2.11.0",
+        "torchvision==0.26.0",
+        "spaces",
         f"ultralytics=={pkg_versions['ultralytics']}",
         f"openvino=={pkg_versions['openvino']}",
         f"gradio=={pkg_versions['gradio']}",
@@ -157,27 +157,27 @@ def build_space(output_dir: Path) -> dict[str, object]:
         f"matplotlib=={pkg_versions['matplotlib']}",
         "",
     ]
-    (output_dir / "requirements.txt").write_text("\n".join(req_lines), encoding="utf-8")
+    with open(output_dir / "requirements.txt", "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(req_lines))
 
-    # 8. README.md (Hugging Face Spaces frontmatter)
+    # 8. README.md (Hugging Face Spaces frontmatter - ZeroGPU uyumlu, LF satır sonlu)
     print("📝 [build_space] README.md (HF metadata) üretiliyor...")
-    gradio_ver = pkg_versions["gradio"]
-    readme_content = f"""---
+    readme_content = """---
 title: Tracera
 emoji: 🔍
 colorFrom: blue
 colorTo: indigo
 sdk: gradio
-sdk_version: {gradio_ver}
+sdk_version: "6.31.0"
 app_file: app.py
 pinned: false
-python_version: 3.11
+python_version: "3.12.12"
 license: agpl-3.0
 ---
 
-# 🔍 Tracera: PCB Hata Tespiti ve Açıklanabilir Yapay Zeka (XAI)
+# 🔍 Tracera: Açıklanabilir ve Edge Uyumlu PCB Hata Tespiti
 
-Baskı devre kartlarında (PCB) mikron düzeyindeki 6 sınıf kusuru tespit eder ve **LayerCAM (Katman 4)** ile modelin karar gerekçesini görselleştirir.
+**Tracera**, baskı devre kartlarındaki (PCB) 6 sınıf üretim kusurunu (**missing_hole**, **mouse_bite**, **open_circuit**, **short**, **spur**, **spurious_copper**) YOLO11s ile tespit eden, kartlar arası genellemeyi kart bazlı bölmeyle ölçen, tespitleri doğrulanmış bir **LayerCAM (Katman 4)** ısı haritasıyla açıklayan ve **OpenVINO INT8 / TensorRT FP16** ile hızlandırılan bir sistemdir.
 
 ## 🚀 Özellikler
 - **Hızlı CPU Çıkarımı:** OpenVINO INT8 kuantize model ile CPU üzerinde ~90 ms gecikme.
@@ -188,7 +188,8 @@ Baskı devre kartlarında (PCB) mikron düzeyindeki 6 sınıf kusuru tespit eder
 Model, 10 kartlık PKU-Market-PCB setinin 6 kartında eğitildi (2 kart val, 2 kart test).
 Test setinde şablon kaynaklı tekrarlayan artifactlar hariç tutulduğunda F1 skoru **%91.13** seviyesindedir.
 """
-    (output_dir / "README.md").write_text(readme_content, encoding="utf-8")
+    with open(output_dir / "README.md", "w", encoding="utf-8", newline="\n") as f:
+        f.write(readme_content)
 
     # 9. Boyut hesabı
     total_bytes = 0
