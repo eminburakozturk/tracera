@@ -1,0 +1,12 @@
+# Tracera Dockerignore
+data/
+runs/
+mlruns/
+mlflow.db
+.git/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/

@@ -472,5 +472,6 @@ def build_app() -> gr.Blocks:
 
 if __name__ == "__main__":
     app = build_app()
-    server_name = "0.0.0.0" if os.environ.get("SPACE_ID") else "127.0.0.1"
-    app.launch(server_name=server_name, server_port=7860, share=False)
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0" if os.environ.get("SPACE_ID") else "127.0.0.1")
+    server_port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    app.launch(server_name=server_name, server_port=server_port, share=False)
