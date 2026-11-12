@@ -91,6 +91,8 @@ def export_openvino_int8(weights_path: Path, imgsz: int, resolved_data_yaml: Pat
 
 def export_tensorrt_fp16(weights_path: Path, imgsz: int, device: str) -> Path:
     """TensorRT FP16 (.engine) formatına dışa aktarır."""
+    import tensorrt  # noqa: F401
+
     model = YOLO(str(weights_path))
     exported = model.export(
         format="engine",
@@ -110,6 +112,8 @@ def export_tensorrt_int8(
     device: str,
 ) -> Path:
     """TensorRT INT8 (split='train' kalibrasyonlu .engine) formatına dışa aktarır; FP16 dosyasını ezmemek için _int8.engine olarak kaydeder."""
+    import tensorrt  # noqa: F401
+
     default_engine = weights_path.with_suffix(".engine")
     fp16_backup: Path | None = None
     if default_engine.exists():
