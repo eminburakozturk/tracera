@@ -1,6 +1,6 @@
 # Tracera: Açıklanabilir ve Edge Uyumlu PCB Hata Tespiti
 
-**Tracera**, baskı devre kartlarındaki (PCB) mikron düzeyindeki 6 sınıf üretim kusurunu (**missing_hole**, **mouse_bite**, **open_circuit**, **short**, **spur**, **spurious_copper**) kart bazlı ayrık veri mimarisiyle tespit eden, kararlarını **LayerCAM (Katman 4)** ile açıklayan ve **OpenVINO INT8** ile CPU üzerinde optimize çalışan uçtan uca bir yapay zeka sistemidir.
+**Tracera**, baskı devre kartlarındaki (PCB) 6 sınıf üretim kusurunu (**missing_hole**, **mouse_bite**, **open_circuit**, **short**, **spur**, **spurious_copper**) YOLO11s ile tespit eden, kartlar arası genellemeyi kart bazlı bölmeyle ölçen, tespitleri doğrulanmış bir **LayerCAM (Katman 4)** ısı haritasıyla açıklayan ve **OpenVINO INT8 / TensorRT FP16** ile hızlandırılan bir sistemdir.
 
 > 🌐 **Canlı Web Demosu (Hugging Face Spaces):** `[DEMO_LINKI_YER_TUTUCU]` *(Gradio arayüzü ile test edilebilir).*
 
@@ -16,18 +16,17 @@ Model seçiminde ve değerlendirmede aşırı iyimser tekil split yanılgısın�
 - **Görülmemiş Test Kartları (Tek Seferlik Nihai Değerlendirme — Kart 06 ve 10, 93 görüntü, 469 kusur kutusu):**
   - **mAP50:** **0.9225**
   - **mAP50-95:** **0.4740**
-  - **Precision:** 0.9462 (Oracle eşik: 0.569)
-  - **Recall:** 0.8577 (Oracle eşik: 0.569)
+  - **Precision / Recall / F1 (val'de önceden seçilen eşik, conf = 0.395):** 0.7455 / 0.8870 / 0.8101 — ayrıntı ve hata analizi Bölüm 4'te.
 
-> **Metodolojik Not:** Test kartları (06 ve 10) çapraz doğrulama katları arasında görece daha kolay olan Kat 5'e denk geldiği için tek seferlik test skoru (0.9225) iyimser uçtadır. Projenin ana teknik iddiası **0.858 ± 0.152** çapraz doğrulama başarımıdır.
+> **Metodolojik Not:** Test kartları (06 ve 10), 1024 kart bazlı CV'de en yüksek skoru alan Kat 5'in doğrulama kartları arasındaydı (0.9569 mAP50). Bu yüzden tek seferlik test skoru (0.9225) iyimser uçtadır; projenin ana iddiası **0.858 ± 0.152** CV ortalamasıdır. Ultralytics'in test için otomatik raporladığı P 0.9462 / R 0.8577, eşiği test setinin kendi F1 eğrisinden (0.569) seçtiği için bir üst sınırdır ("oracle eşik") ve başarı olarak raporlanmaz.
 
 ---
 
 ## 2. Neden Kart Bazlı Bölme? (Veri Sızıntısı Analizi)
 
-Literatürdeki birçok çalışmada PCB görüntüleri rastgele karıştırılarak (%80 eğitim / %20 test) bölünmektedir. Ancak aynı karta ait sentetik kusurlu parçalar hem eğitim hem doğrulama kümelerine dağıldığında, model kartın kendine has arka plan bakır yollarını, lehim maskesi dokusunu ve renk tonunu ezberlemekte; gerçek bir genelleme yapmamaktadır.
+PKU-Market-PCB'nin 693 görüntüsü yalnızca 10 kart fotoğrafından türetilmiştir: her görüntü, bir kartın şablon fotoğrafına sentetik kusurlar eklenerek üretilmiştir. Görüntüler rastgele bölündüğünde aynı kartın görüntüleri hem eğitimde hem doğrulamada yer alır; model, doğrulamada daha önce gördüğü bir kart arka planıyla karşılaşır.
 
-Bu sızıntıyı deneysel olarak kanıtlamak için aynı 623 görüntü üzerinde **Rastgele (Random)** ve **Kart Bazlı (Grouped)** 5-katlı çapraz doğrulama kıyaslanmıştır:
+Bunun skoru ne kadar etkilediğini ölçmek için aynı 623 görüntü (test split'i hariç) üzerinde **Rastgele (StratifiedKFold)** ve **Kart Bazlı (GroupKFold, grup = kart numarası)** 5-katlı çapraz doğrulama kıyaslanmıştır (yolo11s, imgsz 640, 60 epoch, seed 42; Bölüm 3'teki çözünürlük deneyinden farklı ayarlar):
 
 | Bölme Şeması | Kat | Doğrulama Kartları | Eğitim / Val Görüntü | mAP50 | mAP50-95 | missing_hole | mouse_bite | open_circuit | short | spur | spurious_copper |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -45,13 +44,13 @@ Bu sızıntıyı deneysel olarak kanıtlamak için aynı 623 görüntü üzerind
 | Kart Bazlı (Grouped Split) | Kat 5 | 06;07;10 | 490 / 133 | 0.8974 | 0.4801 | 0.5844 | 0.4613 | 0.4746 | 0.4532 | 0.4475 | 0.4593 |
 | **Kart Bazlı (Grouped Split) Ortalama** | **Özet** | **10 Kart (Tümü)** | **623 Toplam** | **0.8061 ± 0.1719** | **0.3957 ± 0.1116** | 0.5193 | 0.3643 | 0.4183 | 0.3683 | 0.3572 | 0.3466 |
 
-> **Deneysel Çıkarım:** Rastgele bölmede mAP50 **0.9364** çıkarken, kart bazlı bölmede model tamamen yabancı kart geometrileriyle karşılaştığında mAP50 **0.8061** seviyesine düşmektedir (**-13.0 puanlık düşüş**). Kat 1'de (sadece Kart 01) model mAP50 = 0.5005 seviyesinde kalmaktadır. Rastgele bölmeyle raporlanan yüksek skorlar sahte bir doğruluk üretmektedir.
+> **Deneysel Çıkarım:** Rastgele bölmede mAP50 **0.9364 ± 0.0124** iken, doğrulama kartları eğitimde hiç görülmediğinde **0.8061 ± 0.1719**'a düşmektedir (**−13.0 puan**) ve kartlar arası değişkenlik çok büyüktür. En kötü kat Kat 1'dir (yalnız Kart 01, mAP50 0.5005); Kart 01'in kusur kutuları veri setindeki en küçük kutulardır (640'ta medyan 11.6 px, diğer kartlarda 16–27 px). Sonuç: rastgele bölme, görülmemiş kartlara genellemeyi olduğundan belirgin biçimde iyimser gösterir.
 
 ---
 
 ## 3. Giriş Çözünürlüğü ve Model Seçimi
 
-Mikron düzeyindeki küçük kusurların (mouse bite, spur) kaybolmaması için giriş boyutu 640×640 ve 1024×1024 çözünürlüklerinde 5-katlı kart bazlı çapraz doğrulama ile karşılaştırılmıştır:
+Kusurlar ~3000 px genişliğindeki görüntülerde medyan ~64 px'tir; 640'a küçültüldüğünde medyan 13–24 px'e, en küçükleri ~5 px'e iner. Bu yüzden giriş boyutu 640×640 ve 1024×1024 çözünürlüklerinde 5-katlı kart bazlı çapraz doğrulama ile karşılaştırılmıştır:
 
 | Çözünürlük | Ağırlık Kuralı | Kat 1 | Kat 2 | Kat 3 | Kat 4 | Kat 5 | Ortalama ± std (mAP50) | Ortalama ± std (mAP50-95) | Ortalama Süre (dk) |
 |---|---|---|---|---|---|---|---|---|---|
@@ -60,7 +59,7 @@ Mikron düzeyindeki küçük kusurların (mouse bite, spur) kaybolmaması için 
 | **1024x1024** | last.pt (Önceden Kilitli) | 0.5885 | 0.9080 | 0.8952 | 0.9388 | 0.9569 | **0.8575 ± 0.1523** | 0.4240 ± 0.1188 | 24.8 dk |
 | **1024x1024** | best.pt (Bilgi Amaçlı Val Seçimi) | 0.6442 | 0.9248 | 0.9295 | 0.9637 | 0.9546 | **0.8834 ± 0.1347** | 0.4508 ± 0.0938 | 24.8 dk |
 
-1024×1024 çözünürlük 5 katın 5'inde de üstünlük sağlamış (ortalama mAP50 farkı: **+0.0706**, mAP50-95: **+0.0480**), bu nedenle nihai model mimarisi olarak `yolo11s @ 1024` seçilmiştir.
+1024×1024 çözünürlük 5 katın 5'inde de üstünlük sağlamış (last.pt ortalama farkı mAP50 **+0.0706**, mAP50-95 **+0.0480**), bu nedenle nihai model `yolo11s @ 1024` seçilmiştir. Bu CV'de early stopping kapalıydı (80 epoch sabit) ve birincil ağırlık last.pt'dir; best.pt, doğrulama setine göre seçildiği için yalnızca bilgi amaçlı verilmiştir. 1280 çözünürlük ve tiling tek split'te denenip elendi (1280, 1024'ten ayırt edilemedi; tiling çıkarım hattını karmaşıklaştırıyordu).
 
 ---
 
@@ -78,7 +77,7 @@ Nesne tespiti modellerinde mAP eşikten bağımsız bir sıralama metriğidir. G
 
 ### Hata Analizi: 2 Sabit Şablon Noktası
 Test setindeki 142 yanlış pozitifin (FP) 138'i tek bir kartta (**Kart 06**) kümelenmiştir (Kart 10'da sadece 4 FP vardır).
-Bu 138 FP incelendiğinde, 114 tanesinin şablon görüntüsündeki **2 sabit koordinatta** tekrarlanan yol geometrisi özellikleri olduğu tespit edilmiştir:
+Bu 138 FP'nin 114'ü, Kart 06'nın neredeyse her test görüntüsünde **aynı 2 sabit koordinatta** tekrarlanmaktadır. Bu noktalarda etiketli bir kusur yoktur (veri seti yalnızca sonradan eklenen sentetik kusurları etiketler):
 1. `mouse_bite` @ $(x \approx 1001, y \approx 1380)$: 57 farklı test görüntüsünde 57 kez yanlış alarm vermiştir (güven: 0.44–0.63).
 2. `spur` @ $(x \approx 1708, y \approx 1050)$: 57 farklı test görüntüsünde 57 kez yanlış alarm vermiştir (güven: 0.40–0.46).
 
@@ -87,17 +86,22 @@ Hatanın kaynağını doğrulamak için model hatasız şablon kartları üzerin
 
 | Kart No | Şablon Dosyası | Yanlış Alarm Sınıfı | Model Güveni | Koordinatlar (cx, cy) | Teşhis |
 |---|---|---|---|---|---|
-| Kart 05 | `05.JPG` | spurious_copper | 0.5108 | (1606.5, 1072.9) | Arka Plan Dokusu |
-| Kart 05 | `05.JPG` | spurious_copper | 0.4475 | (1537.1, 1183.2) | Arka Plan Dokusu |
-| Kart 06 | `06.JPG` | mouse_bite | 0.5569 | (1000.6, 1380.1) | **Şablon Özelliği (Test FP noktasıyla birebir örtüşüyor)** |
+| Kart 05 | `05.JPG` | spurious_copper | 0.5108 | (1606.5, 1072.9) | İncelenmedi |
+| Kart 05 | `05.JPG` | spurious_copper | 0.4475 | (1537.1, 1183.2) | İncelenmedi |
+| Kart 06 | `06.JPG` | mouse_bite | 0.5569 | (1000.6, 1380.1) | **Test FP noktasıyla aynı konum** |
 
-Kart 06'nın hatasız temiz şablonunda `mouse_bite` noktasının **0.5569** güven ile alarm vermesi, bu noktanın sentetik kusur ekleme işleminden değil, kartın orijinal tasarım şablonundaki daralmadan kaynaklandığını **kesin** olarak doğrulamıştır. Bu 2 sabit nokta çıkarıldığında test kümesi Precision skoru **0.9369**, F1 skoru **0.9113** seviyesine yükselmektedir.
+Kart 10 ve 11 şablonlarında hiç yanlış alarm yoktur (4 temiz şablonda toplam 3 alarm).
+
+- **mouse_bite noktası:** Hatasız Kart 06 şablonunda da 0.5569 güvenle alarm verdiği için kaynağı sentetik kusur değil, şablon fotoğrafının kendisidir. Görselde yolda bir daralma gibi görünür; bunun gerçek bir üretim kusuru mu yoksa tasarım detayı mı olduğu bilinmemektedir.
+- **spur noktası:** Konum sabittir, ancak temiz şablonda güven yalnızca 0.09'dur; kusurlu görüntülerde neden 0.40–0.46'ya çıktığı açıklanamamıştır (Bölüm 8).
+
+**Duyarlılık satırı:** Bu 2 nokta çıkarıldığında test Precision'ı **0.9369**, F1 **0.9113** olur. Bu satır sonradan yapılmış bir analizdir; kilitli sonuç P 0.7455 / F1 0.8101'dir.
 
 ---
 
 ## 5. Açıklanabilir Yapay Zeka (XAI) Doğrulama Protokolü
 
-Endüstriyel denetimde modelin doğru tahmini doğru nedenden ötürü yapıp yapmadığını kanıtlamak amacıyla tespit bazlı CAM yöntemleri karşılaştırmalı olarak doğrulanmıştır.
+Her tespit için ayrı bir ısı haritası üretilir ve haritanın modele **sadık** olup olmadığı (modelin o kararı verirken gerçekten o bölgeye dayanıp dayanmadığı) test edilir. Üç yöntem aynı protokolle karşılaştırılmıştır (nihai model, val, 150 tespit, seed 42).
 
 ![LayerCAM Örneği](results/gradcam/tp_0_missing_hole_05_missing_hole_01.png)
 *Şekil 1: LayerCAM @ Katman 4 ile üretilen ısı haritası ve 4× yakınlaştırılmış kusur bölgesi (val kümesi Kart 05 missing_hole tespiti).*
@@ -121,10 +125,12 @@ Endüstriyel denetimde modelin doğru tahmini doğru nedenden ötürü yapıp ya
 | Katman 16 | layercam | 0.7623 / 1.0000 | 0.7538 / 0.9324 | 58.7% | 0.8750 / 1.0000 | 0.8344 / 0.9999 | 60.7% |
 
 ### Neden Klasik Grad-CAM Değil ve Neden LayerCAM @ Katman 4?
-1. **Grad-CAM Yetersizliği:** Klasik Grad-CAM gradyanların uzamsal ortalamasını aldığından, YOLO gibi tek öznitelik haritasında birden fazla tespit üreten modellerde sinyali seyreltir. Silme testinde ortalama skor düşüşü sadece 0.0433'te kalmış, kontrolün üzerine belirgin bir etki koyamamıştır.
-2. **HiResCAM vs. LayerCAM:** HiResCAM silme testinde yüksek sadakat gösterse de gradyanları süzmediği için kutu içi enerji oranı %33.7'de kalmakta, harita alakasız arka plan piksellerine taşmaktadır. LayerCAM ise gradyanları pozitif yönde eleyerek enerjinin **%61.0**'ını kusur kutusuna odaklamakta ve silme testinde %97.3 kazanma oranı sağlamaktadır.
-3. **Katman 4 (Backbone Stride 8):** Katman 16 boyun seviyesinde olduğundan uzamsal çözünürlüğü kabadır; silme testinde rastgele kaydırılan kontrol maskesi dahi kutuya taşarak düşüş üretmektedir. Mikron düzeyindeki PCB kusurlarında yerel sadakat Katman 4 ile elde edilmiştir.
-4. **Adebayo Randomizasyon Testi:** Rastgele ağırlıklı modelde pointing oranının %68 çıkması, pointing testinin model öğrenmesinden çok evrişimli mimarinin uzamsal türevlenebilirliğini yansıttığını göstermiştir. Bu nedenle asıl sadakat metriği olarak mutlak bütçeli yapısal silme testi benimsenmiştir.
+**Silme testi nasıl çalışır:** Haritanın en parlak k pikseli (k = kusur kutusu alanının 1 veya 2 katı) bulanıklaştırılır ve aynı tespitin skorundaki göreli düşüş ölçülür. Kontrol olarak aynı maske pencere içinde rastgele bir yere kaydırılır (5 tekrar). Harita sadıksa, gösterdiği bölgeyi bozmak skoru kontrolden çok daha fazla düşürmelidir. "Kazanma oranı", haritanın kontrolü yendiği tespitlerin yüzdesidir.
+
+1. **Klasik Grad-CAM zayıf:** Kanal ağırlıklarını gradyanın uzamsal ortalamasından hesapladığı için harita "bu tespit"e değil "bu sınıf görüntüde nerede"ye dair olur; PKU'da her görüntüde aynı sınıftan 3–6 kusur bulunduğundan maksimum çoğu zaman başka bir kusura kayar. Pointing oranı %6.7 (şansın üstünde ama düşük); silme testinde düşüş 0.0433 vs kontrol 0.0132 (kazanma %62) — kontrolün üstünde ama küçük.
+2. **HiResCAM vs. LayerCAM:** İki yöntem de eleman bazlıdır ve silme testinde başa baştır; HiResCAM biraz daha sadıktır (kazanma %98.7 vs %97.3). LayerCAM yalnız pozitif gradyanları kullandığı için enerjinin **%61.0**'ını kusur kutusuna toplar (HiResCAM %33.7); daha okunaklı yerelleştirme nedeniyle varsayılan olarak seçilmiştir.
+3. **Neden Katman 4, Katman 16 değil:** İki katman da stride 8'dir. Fark gradyanın yayıldığı alandadır: Katman 16'dan sonra yalnızca tespit başlığının birkaç konvolüsyonu olduğu için bir tespitin gradyanı görüntünün yalnız %0.2'lik küçük bir penceresinde sıfırdan farklıdır. Bu yüzden Katman 16'da pointing (%100) totolojiktir ve kaydırılan kontrol maskesi de kutuya değerek skoru düşürür (kazanma %58.7). Katman 4'te gradyan tüm görüntüye yayılır ve testler anlamlı hale gelir.
+4. **Pointing game neden birincil kanıt değil:** Rastgele ağırlıklı aynı mimaride bile pointing %68'dir (eğitilmiş %90.7); ağın etkin alıcı alanı tespit noktası etrafında yoğunlaşır (Luo vd., 2016). Bu yüzden asıl kanıt silme testidir. Harita–model bağımlılığı ayrıca Adebayo vd. (2018) randomizasyon testiyle kontrol edilmiştir: eğitilmiş ve rastgele ağırlıklı model haritaları arasındaki pencere içi Spearman korelasyonu düşüktür (`results/gradcam_sanity.csv`).
 
 ---
 
@@ -146,13 +152,14 @@ Tüm hız testleri **laptop ortamında** (AMD Ryzen 7 8845HS CPU ve NVIDIA GeFor
 | `g_y11s_1024_full` | TensorRT FP16 (GPU) | GPU (RTX 4060 Laptop) | 22.1 MB | 3.36 / 3.34 ms | 12.19 / 12.29 ms | **81.4** | 0.9372 | 0.4382 |
 
 - **OpenVINO INT8 (CPU):** 1024×1024 çözünürlükte CPU çıkarımını 105.2 ms'den **37.3 ms**'ye düşürmüş (~2.8× hızlanma), model boyutunu 10.0 MB'a indirmiştir. mAP kaybı yaşanmamıştır (120 görüntülük val setindeki +0.6 puanlık oynama ölçüm gürültüsüdür; doğruluk korunmuştur).
-- **TensorRT FP16 (GPU):** 1024×1024'te çıkarımı **3.34 ms**'ye indirmiş, uçtan uca 81.4 FPS hız sağlamıştır.
+- **TensorRT FP16 (GPU):** 1024×1024'te model gecikmesi **3.34 ms**, uçtan uca 81.4 FPS. Uçtan uca ~12 ms'nin yalnızca ~3.3 ms'si modelde geçer; TensorRT'de darboğaz ön/son işlemdir.
+- Tüm doğruluk sayıları val setindendir (test seti benchmark'ta kullanılmadı). INT8 kalibrasyonu train setinden yapıldı. ONNX Runtime CUDA, kurulu onnxruntime-gpu sürümüyle CUDA sürümü uyuşmadığı için ölçülmedi.
 
 ---
 
 ## 7. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)
 
-PKU veri kümesinde öğrenilen temsillerin gerçek endüstriyel PCB-AoI verisine transfer edilebilirliği, standart COCO ağırlıkları ile karşılaştırılarak test edilmiştir (100 epoch, batch 16, imgsz 640, 3 seed, last.pt):
+PCB-AoI, dizgili kartların gerçek SPI-AOI görüntülerinden oluşur (600×600, iki sınıf: Bad_qiaojiao — kalkık bacak, Bad_podu). **Sınıflar PKU ile ortak değildir**; bu yüzden deney aynı kusuru gerçek veriye taşımayı değil, PKU'da öğrenilen temsillerin başka bir PCB görevine başlangıç olarak yararını ölçer. Bölme zamansaldır (train 2016-10…2016-12, val 2017-01…2017-03, test 2017-03…2018-06); 2 birebir kopya görüntü atılmıştır. Protokol deneyden önce sabitlendi: 100 epoch, batch 16, imgsz 640, early stopping kapalı, 3 seed, last.pt, her model testte bir kez:
 
 | Başlangıç Modeli | Seed | Eğitim Süresi | Test mAP50 | Test mAP50-95 | Bad_qiaojiao mAP50 | Bad_podu mAP50 |
 |---|---|---|---|---|---|---|
@@ -165,86 +172,96 @@ PKU veri kümesinde öğrenilen temsillerin gerçek endüstriyel PCB-AoI verisin
 | **COCO (yolo11s.pt) Ortalama** | **Özet (ddof=1)** | **8.95 dk** | **0.6083 ± 0.0042** | **0.2105 ± 0.0026** | **0.3912 ± 0.0244** | **0.8255 ± 0.0207** |
 | **PKU (g_y11s_1024_full) Ortalama** | **Özet (ddof=1)** | **5.37 dk** | **0.6172 ± 0.0301** | **0.2188 ± 0.0094** | **0.4030 ± 0.0560** | **0.8314 ± 0.0104** |
 
-> **Bilimsel Çıkarım (Null Sonuç):** PKU başlangıcının test mAP50 ortalaması 0.6172 ± 0.0301 iken COCO başlangıcı 0.6083 ± 0.0042 seviyesindedir. Eşleştirilmiş fark (+0.0089 ± 0.0318) seed varyansının içindedir ($n=3$). Bu deney bir **null sonuç** olarak raporlanmıştır; PKU ön eğitiminin farklı aydınlatma ve optik koşullara sahip AoI verisinde anlamlı bir avantaj sağladığı gösterilememiştir.
+> **Bilimsel Çıkarım (Null Sonuç):** PKU başlangıcının test mAP50 ortalaması 0.6172 ± 0.0301 iken COCO başlangıcı 0.6083 ± 0.0042 seviyesindedir. Eşleştirilmiş fark (+0.0089 ± 0.0318) seed varyansının içindedir ($n=3$). Seed'lerin ikisinde PKU önde, birinde geride. Bu deney bir **null sonuç** olarak raporlanmıştır: PKU ön eğitiminin AoI görevinde anlamlı bir avantaj sağladığı gösterilememiştir. Mutlak performans düşüktür (Bad_qiaojiao mAP50 ~0.40; eğitimde 138 kutu).
 
 ---
 
 ## 8. Sınırlılıklar ve Açık Noktalar
 
-1. **Çözünürlük Çapraz Doğrulaması Bilgisi:** Giriş çözünürlüğü CV deneyi (Tablo 2), rastgele bölmenin train+val görüntüleri (623 görüntü) üzerinde yürütüldüğü için dolaylı olarak test kartlarının (06 ve 10) bazı görüntülerini içermiştir. Ancak nihai model eğitimi (train kümesindeki 6 kart) bu test kartlarından kesinlikle izole tutulmuştur.
+1. **Çözünürlük Çapraz Doğrulaması Bilgisi:** Giriş çözünürlüğü CV deneyi (Tablo 2), rastgele bölmenin train+val görüntüleri (623 görüntü) üzerinde yürütüldüğü için test kartlarının (06 ve 10) train+val'deki görüntülerini de içermiştir; yani çözünürlük seçimi test kartlarından tam bağımsız değildir. Etkisi küçüktür: 1024, test kartı içermeyen Kat 1–4'ün hepsinde de 640'ı geçmiştir. Nihai model bu iki kartı hiç görmemiştir.
 2. **Kısıtlı Test Arka Planı:** PKU veri kümesinde bağımsız istatistiksel birim görüntü değil **kart tasarımıdır** (10 adet tasarım). Test kümesi fiilen yalnızca 2 kart tasarımından (06 ve 10) oluştuğu için sonuçlar tüm olası endüstriyel kart tasarımlarını temsil etmeyebilir.
 3. **Spur Yanlış Alarmı Davranışı:** Kart 06 temiz şablonunda `spur` noktası eşiğin çok altında kalırken (0.09), hatalı görüntülerde neden eşik üstüne (0.40–0.46) çıktığının kesin fiziksel nedeni kanıtlanamamıştır (olası sıkıştırma/kayıt farkı test edilmemiştir).
-4. **AoI Veri Kümesi Kısıtları:** PCB-AoI transfer veri kümesi küçük (142 görüntü) ve etiket gürültüsüne sahiptir; doğrulama kümesindeki köprü hatası kutu sayısı az olduğu için seed'ler arası dalgalanma yüksektir.
+4. **AoI Veri Kümesi Kısıtları:** PCB-AoI transfer veri kümesi küçük (142 görüntü) ve etiket gürültüsüne sahiptir; doğrulama kümesinde yalnızca 5 Bad_qiaojiao (kalkık bacak) kutusu olduğu için val'e göre seçim yapılmamıştır ve seed'ler arası dalgalanma yüksektir.
 5. **Donanım Kapsamı:** Tüm gecikme ve hız metrikleri dizüstü bilgisayar bileşenleri (Ryzen 7 8845HS / RTX 4060 Laptop GPU) üzerinde elde edilmiştir; endüstriyel gömülü kartlarda (Jetson, edge TPU) doğrudan aynı hızları garanti etmez.
 
 ---
 
 ## 9. Projeyi Çalıştırma
 
-### Ortam Kurulumu (Conda)
+### Ortam Kurulumu (Windows, Conda, NVIDIA GPU)
 ```bash
-conda create -n tracera python=3.11 -y
+setup_env.bat                 # conda ortamı "tracera" (Python 3.11) + PyTorch CUDA 12.6 + requirements.txt
 conda activate tracera
-pip install -r app/requirements.txt
+python scripts/check_env.py   # "CUDA hazır: True" görülmeli
 ```
+Veri: PKU-Market-PCB (Kaggle `akhatova/pcb-defects`) → `data/raw/PCB_DATASET`, PCB-AoI (Kaggle `kubeedgeianvs/pcb-aoi`) → `data/raw/pcb-aoi`. `rotation/` ve `train_data_augmentation/` klasörleri kullanılmaz.
 
-### Deneylerin Sırayla Çalıştırılması
+### Deneylerin Sırası
 ```bash
-# 1. Veri hazırlığı ve kart bazlı ayrıştırma
-python data/prepare_yolo.py
+# 1. Veri hazırlığı
+python scripts/prepare_data.py --scheme random    # sızıntı CV'si için
+python scripts/prepare_data.py --scheme grouped   # ana hat: kart bazlı sabit bölme
+python scripts/prepare_aoi.py                     # PCB-AoI, zamansal bölme + kopya temizliği
 
 # 2. Sızıntı ve çözünürlük çapraz doğrulamaları
 python scripts/cv_leakage.py
 python scripts/cv_resolution.py
 
-# 3. 1024x1024 nihai model eğitimi (last.pt)
-python scripts/train_final.py
+# 3. Nihai model (ve hız karşılaştırması için 640 modeli)
+python scripts/train.py --data configs/data_grouped.yaml --imgsz 1024 --batch 8 --epochs 80 --patience 0 --name g_y11s_1024_full
+python scripts/train.py --data configs/data_grouped.yaml --imgsz 640 --batch 16 --epochs 80 --patience 0 --name g_y11s_640_full
 
-# 4. Değerlendirme, hata analizi ve şablon kontrolü
-python scripts/evaluate.py
+# 4. Değerlendirme ve hata analizi
+python scripts/evaluate.py --weights runs/detect/g_y11s_1024_full/weights/last.pt --imgsz 1024 --split val
+python scripts/evaluate.py --weights runs/detect/g_y11s_1024_full/weights/last.pt --imgsz 1024 --split test   # tek sefer; ikinci çalıştırmayı script reddeder
+python scripts/plot_confusion.py
 python scripts/error_analysis.py
 
-# 5. XAI LayerCAM doğrulama ve silme testleri
-python scripts/gradcam.py --method layercam --layer 4
+# 5. Açıklanabilirlik doğrulaması
+python scripts/gradcam.py --weights runs/detect/g_y11s_1024_full/weights/last.pt --imgsz 1024 --split val
 
-# 6. Kenar formatları dışa aktarma ve benchmark
-python scripts/benchmark_edge.py
+# 6. Export ve benchmark (her model için)
+python scripts/export.py --weights runs/detect/g_y11s_1024_full/weights/last.pt --imgsz 1024
+python scripts/benchmark.py --weights runs/detect/g_y11s_1024_full/weights/last.pt --imgsz 1024 --power plugged
 
-# 7. PCB-AoI transfer öğrenme deneyi
+# 7. PCB-AoI transfer deneyi
 python scripts/aoi_transfer.py
 
-# 8. Dağıtım paketi oluşturma ve izole test
+# 8. README tabloları, demo paketi, demo
+python scripts/make_readme_tables.py
 python scripts/build_space.py
-
-# 9. Web arayüzünü yerel olarak başlatma
 python app/app.py
 ```
+Tüm kararlar ve gerekçeleri: [`KARARLAR.md`](KARARLAR.md).
 
-### Docker ile Çalıştırma
+### Docker ile Demo
 ```bash
-# Docker imajını oluştur (space/ paketinden)
-docker build -t tracera .
-
-# Konteyneri başlat (Gradio portu: 7860)
-docker run -p 7860:7860 tracera
+python scripts/build_space.py   # space/ paketini üretir (ağırlıklar dahil)
+docker build -t tracera-app .
+docker run -p 7860:7860 tracera-app
 ```
-Tarayıcınızdan `http://localhost:7860` adresine gidin. Arayüzde yerleşik val örnekleri üzerinden tespit ve LayerCAM açıklaması yapabilirsiniz.
+Tarayıcıda `http://localhost:7860`.
 
 ---
 
 ## 10. Veri Kaynakları ve Lisans
 
-- **PKU-Market-PCB Veri Kümesi:** Tang vd. (Pekin Üniversitesi) tarafından sağlanan 1386 görüntülük açık PCB hata tespiti veri kümesi.
-- **DeepPCB / PCB-AoI Veri Kümesi:** Endüstriyel yüzey montaj kusurlarını içeren açık araştırma seti.
-- **Lisans:** `[LISANS_TURU_KULLANICI_SECIMI]` *(Kullanıcı tarafından belirlenecektir).*
+- **PKU-Market-PCB:** W. Huang, P. Wei, "A PCB Dataset for Defects Detection and Classification", arXiv:1901.08204, 2019. Orijinal set döndürülmüş kopyalarla 1386 görüntüdür; bu projede yalnızca döndürülmemiş 693 görüntü kullanılmıştır (döndürülmüş kopyalar aynı görüntülerden türediği için sızıntı yaratır).
+- **PCB-AoI:** Kaggle `kubeedgeianvs/pcb-aoi` (KubeEdge Ianvs). Yalnızca `train_data` ve `test_data` kullanılmıştır.
+- Demo örnek görüntüleri PKU-Market-PCB doğrulama kartlarından (05, 11) alınmıştır; hakları veri seti sahiplerine aittir.
+- **Lisans:** Bu proje [GNU AGPL-3.0](LICENSE) ile lisanslanmıştır (Ultralytics YOLO'nun AGPL-3.0 lisansıyla uyumlu olması için).
 
 ---
 
 ## English Summary
 
-**Tracera** is an explainable and edge-optimized PCB defect detection system focused on 6 microscopic manufacturing defect classes. Addressing the widespread data leakage problem in random split setups, Tracera enforces a rigorous **grouped split (card-based partitioning)** where test cards are never seen during training. Key findings:
-- **Primary Result:** 5-Fold Grouped Cross-Validation achieves **0.858 ± 0.152** mAP50 at 1024×1024 with `last.pt`, outperforming 640×640 on 5/5 folds. Single-shot unseen test evaluation yields **0.9225** mAP50.
-- **Operating Point & Error Analysis:** Calibrated at val F1-max (conf = 0.395), the test F1 is 0.8101. Error analysis reveals 114 out of 142 false alarms originate from 2 invariant baseline copper trace patterns on board 06 (confirmed on clean template images). Excluding these 2 template points yields **0.9113** F1 score (0.9369 Precision).
-- **Explainable AI (XAI):** Standard Grad-CAM fails deletion fidelity tests on YOLO architectures. **LayerCAM at Backbone Layer 4 (Stride 8)** concentrates 61.0% activation energy inside the ground truth box and achieves a **97.3% win rate** in absolute budget structural deletion tests.
-- **Edge Deployment:** OpenVINO INT8 quantization accelerates CPU inference by ~2.8× (from 105.2 ms to **37.3 ms**) and compresses the model to 10.0 MB on an AMD Ryzen 7 8845HS laptop CPU with zero loss in mAP50.
-- **Transfer Learning:** Transfer experiments to real industrial PCB-AoI images yielded a **null result** (PKU pre-training 0.617 ± 0.030 vs COCO 0.608 ± 0.004 mAP50, within seed noise), openly documenting domain transfer boundaries.
+**Tracera** detects 6 classes of PCB manufacturing defects with YOLO11s, measures generalization to unseen boards with board-grouped splits, explains each detection with a validated LayerCAM heatmap, and is accelerated with OpenVINO INT8 and TensorRT FP16.
+- **Primary result:** board-grouped 5-fold CV mAP50 **0.858 ± 0.152** (yolo11s @ 1024, last.pt); 1024 beats 640 on 5/5 folds. Single locked test on 2 unseen boards: mAP50 **0.9225**, mAP50-95 0.474.
+- **Leakage:** random splits overstate unseen-board performance by ~13 mAP50 points (0.936 ± 0.012 vs 0.806 ± 0.172 at 640), because PKU's 693 images come from only 10 board photos.
+- **Operating point:** threshold chosen on val (F1-max, conf 0.395) gives test P 0.746 / R 0.887 / F1 0.810. 114 of 142 false positives come from 2 fixed locations on board 06; the mouse_bite location also fires on the defect-free template image. Excluding both locations (post-hoc sensitivity row): P 0.937 / F1 0.911.
+- **Explainability:** a deletion test (blur the map's top pixels vs. the same mask shifted elsewhere) shows LayerCAM at backbone layer 4 is faithful (relative score drop 0.70 vs 0.002 control, 97.3% win rate); classic Grad-CAM is weak (0.043 vs 0.013, 62%). Pointing game is reported but not used as primary evidence, since a randomly initialized network already scores 68%.
+- **Speed (laptop: Ryzen 7 8845HS / RTX 4060 Laptop, val set):** OpenVINO INT8 on CPU is ~2.8× faster than FP32 at 1024 (37.3 ms) and 3.7× smaller with no measurable mAP loss; TensorRT FP16 runs the model in 3.34 ms (81 FPS end-to-end). No embedded-device claims.
+- **Transfer to PCB-AoI** (real AOI images, different classes): PKU vs COCO initialization 0.617 ± 0.030 vs 0.608 ± 0.004 mAP50 over 3 seeds — no significant difference (null result).
+
+Copyright (C) 2026 Emin Burak Öztürk — GNU AGPL-3.0 (LICENSE)
+

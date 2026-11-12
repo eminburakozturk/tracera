@@ -172,6 +172,7 @@ sdk_version: {gradio_ver}
 app_file: app.py
 pinned: false
 python_version: 3.11
+license: agpl-3.0
 ---
 
 # 🔍 Tracera: PCB Hata Tespiti ve Açıklanabilir Yapay Zeka (XAI)
