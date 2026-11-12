@@ -222,14 +222,13 @@ python app/app.py
 
 ### Docker ile Çalıştırma
 ```bash
-# Dağıtım paketini inşa et
-python scripts/build_space.py
+# Docker imajını oluştur (space/ paketinden)
+docker build -t tracera .
 
-# Docker imajını oluştur ve çalıştır
-docker build -t tracera-app .
-docker run -p 7860:7860 tracera-app
+# Konteyneri başlat (Gradio portu: 7860)
+docker run -p 7860:7860 tracera
 ```
-Tarayıcınızdan `http://localhost:7860` adresine gidin.
+Tarayıcınızdan `http://localhost:7860` adresine gidin. Arayüzde yerleşik val örnekleri üzerinden tespit ve LayerCAM açıklaması yapabilirsiniz.
 
 ---
 
