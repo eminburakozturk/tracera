@@ -1,0 +1,13 @@
+baslangic,model_kaynak,seed,split,weights,epochs,batch,imgsz,train_sure_dk,mAP50,mAP50-95,Bad_qiaojiao_mAP50,Bad_qiaojiao_mAP50-95,Bad_podu_mAP50,Bad_podu_mAP50-95
+coco,COCO (yolo11s.pt),0,val,last.pt,100,16,640,5.97,0.7214,0.2946,0.6296,0.306,0.8131,0.2831
+coco,COCO (yolo11s.pt),0,test,last.pt,100,16,640,5.97,0.6035,0.2082,0.375,0.1243,0.8321,0.2921
+coco,COCO (yolo11s.pt),1,val,last.pt,100,16,640,15.62,0.5918,0.1927,0.3513,0.0956,0.8322,0.2897
+coco,COCO (yolo11s.pt),1,test,last.pt,100,16,640,15.62,0.6107,0.2133,0.3793,0.1218,0.8422,0.3049
+coco,COCO (yolo11s.pt),2,val,last.pt,100,16,640,5.27,0.6954,0.2629,0.581,0.2258,0.8098,0.2999
+coco,COCO (yolo11s.pt),2,test,last.pt,100,16,640,5.27,0.6108,0.2099,0.4193,0.1239,0.8023,0.2958
+pku,PKU (g_y11s_1024_full),0,val,last.pt,100,16,640,5.11,0.5052,0.1803,0.1336,0.0548,0.8767,0.3057
+pku,PKU (g_y11s_1024_full),0,test,last.pt,100,16,640,5.11,0.6283,0.2212,0.4134,0.146,0.8433,0.2965
+pku,PKU (g_y11s_1024_full),1,val,last.pt,100,16,640,5.19,0.6326,0.2384,0.4016,0.1527,0.8635,0.3241
+pku,PKU (g_y11s_1024_full),1,test,last.pt,100,16,640,5.19,0.6402,0.2267,0.4531,0.1677,0.8273,0.2858
+pku,PKU (g_y11s_1024_full),2,val,last.pt,100,16,640,5.8,0.475,0.1675,0.1394,0.0373,0.8105,0.2977
+pku,PKU (g_y11s_1024_full),2,test,last.pt,100,16,640,5.8,0.5831,0.2084,0.3425,0.1269,0.8237,0.29
