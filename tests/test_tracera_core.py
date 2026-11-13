@@ -32,6 +32,18 @@ from tracera_core import (  # noqa: E402
 VAL_IMAGE_PATH = REPO_ROOT / "app" / "examples" / "val_05_missing_hole_01.jpg"
 REF_OV_JSON = REPO_ROOT / "web_spike" / "ref" / "05_missing_hole_01__openvino-int8.json"
 WEB_METRICS_PATH = REPO_ROOT / "web" / "public" / "metrics.json"
+SAMPLES_JSON = REPO_ROOT / "web_spike" / "samples.json"
+VAL_IMAGES_DIR = REPO_ROOT / "data" / "yolo" / "grouped" / "val" / "images"
+REF_DIR = REPO_ROOT / "web_spike" / "ref"
+
+
+def _box_iou(a: list[float], b: list[float]) -> float:
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    area_a = max(0.0, (a[2] - a[0]) * (a[3] - a[1]))
+    area_b = max(0.0, (b[2] - b[0]) * (b[3] - b[1]))
+    return inter / max(1e-9, area_a + area_b - inter)
 
 
 def test_tracera_core_does_not_import_gradio() -> None:
@@ -104,3 +116,43 @@ def test_metrics_loader_matches_web_metrics() -> None:
         assert k in payload
     if WEB_METRICS_PATH.is_file():
         assert payload == json.loads(WEB_METRICS_PATH.read_text(encoding="utf-8"))
+
+
+def test_detect_openvino_10_val_ultralytics_parity() -> None:
+    assert SAMPLES_JSON.is_file()
+    samples = json.loads(SAMPLES_JSON.read_text(encoding="utf-8"))
+    assert len(samples) == 10
+
+    ov = YOLO(str(OPENVINO_MODEL_PATH), task="detect")
+    for fname in samples:
+        img_path = VAL_IMAGES_DIR / fname
+        assert img_path.is_file(), f"Val görüntüsü eksik: {img_path}"
+        img_bgr = cv2.imread(str(img_path))
+        assert img_bgr is not None
+
+        ref_res = ov.predict(img_bgr, imgsz=IMGSZ, conf=DEFAULT_CONF, iou=DEFAULT_IOU_NMS, device="cpu", verbose=False)[0]
+        ref_dets = sorted(
+            [
+                (int(c), float(s), [float(v) for v in b])
+                for c, s, b in zip(
+                    ref_res.boxes.cls.cpu().numpy(),
+                    ref_res.boxes.conf.cpu().numpy(),
+                    ref_res.boxes.xyxy.cpu().numpy(),
+                )
+            ],
+            key=lambda x: -x[1],
+        )
+
+        tc_res = detect_openvino(img_bgr, conf=DEFAULT_CONF, iou_nms=DEFAULT_IOU_NMS, imgsz=IMGSZ)
+        tc_dets = sorted([(d.cls_id, d.conf, d.box) for d in tc_res.detections], key=lambda x: -x[1])
+
+        assert len(tc_dets) == len(ref_dets), f"{fname}: adet uyuşmazlığı {len(tc_dets)} vs {len(ref_dets)}"
+        for (rc, rs, rb), (tc, ts, tb) in zip(ref_dets, tc_dets):
+            assert tc == rc
+            assert abs(ts - rs) < 0.002, f"{fname}: |Δconf|={abs(ts - rs)}"
+            assert _box_iou(rb, tb) >= 0.999, f"{fname}: IoU={_box_iou(rb, tb)}"
+
+        ref_json_path = REF_DIR / f"{img_path.stem}__openvino-int8.json"
+        if ref_json_path.is_file():
+            ref_json = json.loads(ref_json_path.read_text(encoding="utf-8"))
+            assert len(tc_dets) == len(ref_json["detections"]), f"{fname}: JSON adet uyuşmazlığı"
