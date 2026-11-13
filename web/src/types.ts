@@ -218,9 +218,17 @@ export interface QuantParityRow {
   ort_dconf: number;
 }
 
+export interface SplitFpSummary {
+  counts: Record<string, number>;
+  total: number;
+}
+
 export interface ErrorAnalysisPayload {
   classes: string[];
-  total_fp_rows: number;
+  split_totals: {
+    test: SplitFpSummary;
+    val: SplitFpSummary;
+  };
   board_class_matrix: BoardClassFpRow[];
   template_spots: TemplateSpotArtifact[];
   template_clean_rows: TemplateCleanRow[];

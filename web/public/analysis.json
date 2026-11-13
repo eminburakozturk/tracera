@@ -7,7 +7,30 @@
     "spur",
     "spurious_copper"
   ],
-  "total_fp_rows": 158,
+  "split_totals": {
+    "test": {
+      "counts": {
+        "missing_hole": 2,
+        "mouse_bite": 62,
+        "open_circuit": 6,
+        "short": 4,
+        "spur": 64,
+        "spurious_copper": 4
+      },
+      "total": 142
+    },
+    "val": {
+      "counts": {
+        "missing_hole": 4,
+        "mouse_bite": 2,
+        "open_circuit": 2,
+        "short": 3,
+        "spur": 3,
+        "spurious_copper": 2
+      },
+      "total": 16
+    }
+  },
   "board_class_matrix": [
     {
       "split": "test",

@@ -58,6 +58,10 @@ interface AppState {
   ortProgress: OrtProgress;
   ortModelCached: boolean | null;
 
+  tauriMode: boolean;
+  tauriSidecarStatus: "idle" | "starting" | "ready" | "error";
+  tauriSidecarError: string | null;
+
   setActiveTab: (tab: AppTab) => void;
   setTheme: (theme: ThemeMode) => void;
   setLang: (lang: LangCode) => void;
@@ -84,6 +88,11 @@ interface AppState {
 
   setOrtProgress: (progress: OrtProgress) => void;
   setOrtModelCached: (cached: boolean | null) => void;
+  setTauriState: (patch: {
+    tauriMode?: boolean;
+    tauriSidecarStatus?: "idle" | "starting" | "ready" | "error";
+    tauriSidecarError?: string | null;
+  }) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -115,6 +124,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   ortProgress: { stage: "idle", percent: 0, message: "" },
   ortModelCached: null,
+
+  tauriMode: false,
+  tauriSidecarStatus: "idle",
+  tauriSidecarError: null,
 
   setActiveTab: (activeTab) => set({ activeTab }),
   setTheme: (theme) => set({ theme }),
@@ -164,4 +177,5 @@ export const useAppStore = create<AppState>((set) => ({
 
   setOrtProgress: (ortProgress) => set({ ortProgress }),
   setOrtModelCached: (ortModelCached) => set({ ortModelCached }),
+  setTauriState: (patch) => set((prev) => ({ ...prev, ...patch })),
 }));

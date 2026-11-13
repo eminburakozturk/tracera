@@ -202,6 +202,14 @@ test.describe("Adım 5 — Canlı Video Modu (WebGPU & WASM) + Hata Analizi Gale
       expect(stats.totalBoxes).toBeGreaterThanOrEqual(1);
       expect(stats.hasCanvasPixels).toBe(true);
 
+      if (ep === "wasm") {
+        await expect(page.getByTestId("live-wasm-warning")).toContainText(
+          "WebGPU yok; canlı mod bu cihazda çok yavaş (<1 FPS) çalışır.",
+        );
+      } else {
+        await expect(page.getByTestId("live-wasm-warning")).toHaveCount(0);
+      }
+
       // Verify pause button toggles cleanly
       await page.getByTestId("live-pause-btn").click();
       await expect(page.getByTestId("live-pause-btn")).toContainText("Devam Et");
@@ -227,8 +235,9 @@ test.describe("Adım 5 — Canlı Video Modu (WebGPU & WASM) + Hata Analizi Gale
         const section = page.getByTestId("error-analysis-section");
         await section.scrollIntoViewIfNeeded();
         await expect(section).toBeVisible();
-        await expect(page.getByTestId("fp-matrix-table")).toContainText("138");
-        await expect(page.getByTestId("fp-matrix-table")).toContainText("158");
+        await expect(section).not.toContainText("158");
+        await expect(page.getByTestId("fp-total-test")).toContainText("142");
+        await expect(page.getByTestId("fp-total-val")).toContainText("16");
         await expect(page.getByTestId("template-spot-mouse_bite")).toContainText(
           "Evet (0.5569)",
         );
@@ -236,6 +245,9 @@ test.describe("Adım 5 — Canlı Video Modu (WebGPU & WASM) + Hata Analizi Gale
           "Hayır (<0.395)",
         );
         await expect(page.getByTestId("quant-parity-table")).toContainText("0.395");
+        await expect(page.getByTestId("device-bench-btn")).toContainText(
+          "Bu cihazda hız testi",
+        );
 
         const imagesLoaded = await page.evaluate(() => {
           const imgs = Array.from(

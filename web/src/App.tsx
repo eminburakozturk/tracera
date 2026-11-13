@@ -1,4 +1,5 @@
 import * as React from "react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AboutView } from "./components/AboutView";
 import { DetectView } from "./components/DetectView";
@@ -26,6 +27,7 @@ import type { Detector } from "./inference/types";
 import { loadAnalysis } from "./lib/analysis";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
+import { connectTauriSidecar, isTauriApp } from "./platform/tauri";
 import { useAppStore } from "./store/useAppStore";
 
 export const ORT_ENABLED = true;
@@ -38,8 +40,14 @@ export function App() {
   const theme = useAppStore((s) => s.theme);
   const lang = useAppStore((s) => s.lang);
   const backendChoice = useAppStore((s) => s.backendChoice);
+  const setBackendChoice = useAppStore((s) => s.setBackendChoice);
   const apiBaseUrl = useAppStore((s) => s.apiBaseUrl);
+  const setApiBaseUrl = useAppStore((s) => s.setApiBaseUrl);
   const cloudSpaceId = useAppStore((s) => s.cloudSpaceId);
+  const tauriMode = useAppStore((s) => s.tauriMode);
+  const tauriSidecarStatus = useAppStore((s) => s.tauriSidecarStatus);
+  const tauriSidecarError = useAppStore((s) => s.tauriSidecarError);
+  const setTauriState = useAppStore((s) => s.setTauriState);
   const setApiHealth = useAppStore((s) => s.setApiHealth);
   const setMeta = useAppStore((s) => s.setMeta);
   const setConfThreshold = useAppStore((s) => s.setConfThreshold);
@@ -277,46 +285,102 @@ export function App() {
     [handleRunExplain, setActiveTab, setSelectedDetectionId],
   );
 
-  const bootstrappedRef = React.useRef(false);
+  const handleSelectExampleRef = React.useRef(handleSelectExample);
+  handleSelectExampleRef.current = handleSelectExample;
+
   React.useEffect(() => {
-    if (bootstrappedRef.current) return;
-    bootstrappedRef.current = true;
+    let active = true;
+    let cleanupSidecar: (() => void) | null = null;
 
-    void (async () => {
-      const loadedMeta = await loadModelMeta();
-      setMeta(loadedMeta);
-      setConfThreshold(loadedMeta.conf);
-
-      const { data: loadedMetrics, source } = await loadMetrics(
-        useAppStore.getState().apiBaseUrl,
-      );
+    const finishBootstrap = async (resolvedApiUrl: string, cachedOrt: boolean) => {
+      const { data: loadedMetrics, source } = await loadMetrics(resolvedApiUrl);
+      if (!active) return;
       setMetrics(loadedMetrics, source);
 
       const loadedAnalysis = await loadAnalysis();
+      if (!active) return;
       if (loadedAnalysis) {
         setAnalysis(loadedAnalysis);
       }
 
-      const cached = await isOrtModelCached(loadedMeta.onnx);
-      setOrtModelCached(cached);
-
       if (!useAppStore.getState().selectedImage && VAL_EXAMPLES.length > 0) {
         try {
           const shouldAutoDetect =
-            useAppStore.getState().backendChoice !== "ort" || cached;
-          await handleSelectExample(VAL_EXAMPLES[0], shouldAutoDetect);
+            useAppStore.getState().backendChoice !== "ort" || cachedOrt;
+          await handleSelectExampleRef.current(VAL_EXAMPLES[0], shouldAutoDetect);
         } catch {
           // ignore offline bootstrap failure in unit tests
         }
       }
+    };
+
+    void (async () => {
+      const loadedMeta = await loadModelMeta();
+      if (!active) return;
+      setMeta(loadedMeta);
+      setConfThreshold(loadedMeta.conf);
+
+      const cached = await isOrtModelCached(loadedMeta.onnx);
+      if (!active) return;
+      setOrtModelCached(cached);
+
+      const inTauri = await isTauriApp();
+      if (!active) return;
+
+      if (inTauri) {
+        setTauriState({ tauriMode: true });
+        setBackendChoice("api");
+        cleanupSidecar = await connectTauriSidecar({
+          onStarting: () => {
+            if (!active) return;
+            setTauriState({
+              tauriSidecarStatus: "starting",
+              tauriSidecarError: null,
+            });
+          },
+          onReady: (baseUrl) => {
+            if (!active) return;
+            setApiBaseUrl(baseUrl);
+            setBackendChoice("api");
+            setTauriState({
+              tauriSidecarStatus: "ready",
+              tauriSidecarError: null,
+            });
+            void checkApiHealth(baseUrl)
+              .then((info) => {
+                if (active) setApiHealth({ status: "online", info });
+              })
+              .catch(() => {});
+            void finishBootstrap(baseUrl, cached);
+          },
+          onError: (errMsg) => {
+            if (!active) return;
+            setTauriState({
+              tauriSidecarStatus: "error",
+              tauriSidecarError: errMsg,
+            });
+          },
+        });
+        return;
+      }
+
+      await finishBootstrap(useAppStore.getState().apiBaseUrl, cached);
     })();
+
+    return () => {
+      active = false;
+      cleanupSidecar?.();
+    };
   }, [
-    handleSelectExample,
     setAnalysis,
+    setApiBaseUrl,
+    setApiHealth,
+    setBackendChoice,
     setConfThreshold,
     setMeta,
     setMetrics,
     setOrtModelCached,
+    setTauriState,
   ]);
 
   // Suppress unused variable warnings on confThreshold/detectResult/selectedDetectionId if needed
@@ -324,6 +388,43 @@ export function App() {
   void detectResult;
   void selectedDetectionId;
   void selectedImage;
+
+  if (tauriMode && tauriSidecarStatus === "starting") {
+    return (
+      <div
+        data-testid="tauri-starting-screen"
+        className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-canvas)] px-6 text-center text-[var(--text-primary)]"
+      >
+        <div className="max-w-md space-y-3 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-surface)] p-8 shadow-lg">
+          <Loader2 className="mx-auto h-10 w-10 animate-spin text-[var(--accent)]" />
+          <h1 className="text-lg font-semibold">{t("tauri.startingTitle")}</h1>
+          <p className="text-xs text-[var(--text-secondary)]">
+            {t("tauri.startingSubtitle")}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (tauriMode && tauriSidecarStatus === "error") {
+    return (
+      <div
+        role="alert"
+        data-testid="tauri-error-screen"
+        className="flex min-h-screen flex-col items-center justify-center bg-[var(--bg-canvas)] px-6 text-center text-[var(--text-primary)]"
+      >
+        <div className="max-w-lg space-y-3 rounded-xl border border-red-500/40 bg-red-500/10 p-8 shadow-lg">
+          <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
+          <h1 className="text-lg font-semibold text-red-700 dark:text-red-300">
+            {t("tauri.errorTitle")}
+          </h1>
+          <p className="break-words font-mono text-xs text-red-800 dark:text-red-200">
+            {tauriSidecarError}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)]">

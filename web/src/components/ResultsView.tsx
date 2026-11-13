@@ -1,8 +1,14 @@
 import * as React from "react";
+import { Check, Copy, Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { loadAnalysis } from "../lib/analysis";
+import {
+  type DeviceBenchmarkReport,
+  runDeviceBenchmark,
+} from "../lib/deviceBenchmark";
 import { useAppStore } from "../store/useAppStore";
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import {
   Card,
   CardContent,
@@ -25,8 +31,67 @@ export function ResultsView() {
   const { t } = useTranslation();
   const metrics = useAppStore((s) => s.metrics);
   const metricsSource = useAppStore((s) => s.metricsSource);
+  const meta = useAppStore((s) => s.meta);
   const analysis = useAppStore((s) => s.analysis);
   const setAnalysis = useAppStore((s) => s.setAnalysis);
+
+  const [benchRunning, setBenchRunning] = React.useState(false);
+  const [benchProgress, setBenchProgress] = React.useState<{
+    done: number;
+    total: number;
+  }>({ done: 0, total: 21 });
+  const [benchReport, setBenchReport] =
+    React.useState<DeviceBenchmarkReport | null>(null);
+  const [benchError, setBenchError] = React.useState<string | null>(null);
+  const [benchCopied, setBenchCopied] = React.useState(false);
+  const abortedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    abortedRef.current = false;
+    return () => {
+      abortedRef.current = true;
+    };
+  }, []);
+
+  const handleRunDeviceBenchmark = React.useCallback(async () => {
+    if (benchRunning) return;
+    setBenchRunning(true);
+    setBenchError(null);
+    setBenchCopied(false);
+    setBenchProgress({ done: 0, total: 21 });
+    try {
+      const report = await runDeviceBenchmark({
+        meta,
+        repeats: 5,
+        onProgress: (done, total) => setBenchProgress({ done, total }),
+        shouldAbort: () => abortedRef.current,
+      });
+      if (!abortedRef.current) {
+        setBenchReport(report);
+      }
+    } catch (err) {
+      if (!abortedRef.current) {
+        setBenchError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      if (!abortedRef.current) {
+        setBenchRunning(false);
+      }
+    }
+  }, [benchRunning, meta]);
+
+  const handleCopyBenchJson = React.useCallback(async () => {
+    if (!benchReport) return;
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(benchReport, null, 2),
+      );
+      setBenchCopied(true);
+      setTimeout(() => setBenchCopied(false), 2000);
+    } catch (err) {
+      setBenchError(err instanceof Error ? err.message : String(err));
+    }
+  }, [benchReport]);
 
   React.useEffect(() => {
     if (analysis) return;
@@ -381,11 +446,14 @@ export function ResultsView() {
           <CardHeader>
             <CardTitle>{t("results.errorAnalysisTitle")}</CardTitle>
             <CardDescription>
-              {t("results.errorAnalysisDesc", { totalFp: analysis.total_fp_rows })}
+              {t("results.errorAnalysisDesc", {
+                testFp: analysis.split_totals.test.total,
+                valFp: analysis.split_totals.val.total,
+              })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Kart × Sınıf FP tablosu */}
+            {/* Kart × Sınıf FP tablosu (Test ve Val ayrı) */}
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 {t("results.fpMatrixTitle")}
@@ -408,40 +476,73 @@ export function ResultsView() {
                     </tr>
                   </thead>
                   <tbody>
-                    {analysis.board_class_matrix.map((row) => (
-                      <tr
-                        key={`${row.split}-${row.kart_no}`}
-                        className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
-                      >
-                        <td className="py-2 pr-3 font-semibold">{row.kart_no}</td>
-                        <td className="py-2 pr-3 text-[var(--text-secondary)]">
-                          {row.split}
-                        </td>
-                        {analysis.classes.map((cls) => (
-                          <td key={cls} className="py-2 pr-3">
-                            {row.counts[cls] ?? 0}
+                    {analysis.board_class_matrix
+                      .filter((row) => row.split === "test")
+                      .map((row) => (
+                        <tr
+                          key={`${row.split}-${row.kart_no}`}
+                          className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
+                        >
+                          <td className="py-2 pr-3 font-semibold">{row.kart_no}</td>
+                          <td className="py-2 pr-3 text-[var(--text-secondary)]">
+                            {row.split}
                           </td>
-                        ))}
-                        <td className="py-2 font-semibold">{row.total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-[var(--border-hairline)] font-semibold text-[var(--text-primary)]">
+                          {analysis.classes.map((cls) => (
+                            <td key={cls} className="py-2 pr-3">
+                              {row.counts[cls] ?? 0}
+                            </td>
+                          ))}
+                          <td className="py-2 font-semibold">{row.total}</td>
+                        </tr>
+                      ))}
+                    <tr
+                      className="border-b-2 border-[var(--border-hairline)] bg-[var(--bg-muted)]/40 font-semibold text-[var(--text-primary)]"
+                      data-testid="fp-total-test"
+                    >
                       <td className="py-2 pr-3" colSpan={2}>
-                        Toplam
+                        {t("results.fpSplitTestTotal")}
                       </td>
                       {analysis.classes.map((cls) => (
                         <td key={cls} className="py-2 pr-3">
-                          {analysis.board_class_matrix.reduce(
-                            (acc, r) => acc + (r.counts[cls] ?? 0),
-                            0,
-                          )}
+                          {analysis.split_totals.test.counts[cls] ?? 0}
                         </td>
                       ))}
-                      <td className="py-2">{analysis.total_fp_rows}</td>
+                      <td className="py-2">{analysis.split_totals.test.total}</td>
                     </tr>
-                  </tfoot>
+                    {analysis.board_class_matrix
+                      .filter((row) => row.split === "val")
+                      .map((row) => (
+                        <tr
+                          key={`${row.split}-${row.kart_no}`}
+                          className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
+                        >
+                          <td className="py-2 pr-3 font-semibold">{row.kart_no}</td>
+                          <td className="py-2 pr-3 text-[var(--text-secondary)]">
+                            {row.split}
+                          </td>
+                          {analysis.classes.map((cls) => (
+                            <td key={cls} className="py-2 pr-3">
+                              {row.counts[cls] ?? 0}
+                            </td>
+                          ))}
+                          <td className="py-2 font-semibold">{row.total}</td>
+                        </tr>
+                      ))}
+                    <tr
+                      className="border-t border-[var(--border-hairline)] bg-[var(--bg-muted)]/40 font-semibold text-[var(--text-primary)]"
+                      data-testid="fp-total-val"
+                    >
+                      <td className="py-2 pr-3" colSpan={2}>
+                        {t("results.fpSplitValTotal")}
+                      </td>
+                      {analysis.classes.map((cls) => (
+                        <td key={cls} className="py-2 pr-3">
+                          {analysis.split_totals.val.counts[cls] ?? 0}
+                        </td>
+                      ))}
+                      <td className="py-2">{analysis.split_totals.val.total}</td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
             </div>
@@ -548,6 +649,138 @@ export function ResultsView() {
           </CardContent>
         </Card>
       )}
+
+      {/* 8. Bu Cihazda Hız Testi (Telefon / Tarayıcı Ölçümü) */}
+      <Card data-testid="device-bench-section">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>{t("results.deviceBenchTitle")}</CardTitle>
+              <CardDescription>{t("results.deviceBenchDesc")}</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleRunDeviceBenchmark()}
+                disabled={benchRunning}
+                data-testid="device-bench-btn"
+              >
+                <Gauge className="h-4 w-4" />
+                <span>
+                  {benchRunning
+                    ? t("results.deviceBenchRunning", benchProgress)
+                    : t("results.deviceBenchRunBtn")}
+                </span>
+              </Button>
+              {benchReport && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleCopyBenchJson()}
+                  data-testid="device-bench-copy-btn"
+                >
+                  {benchCopied ? (
+                    <>
+                      <Check className="h-4 w-4 text-emerald-500" />
+                      <span>{t("results.deviceBenchCopied")}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      <span>{t("results.deviceBenchCopyBtn")}</span>
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+
+        {(benchError || benchReport) && (
+          <CardContent className="space-y-3">
+            {benchError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"
+              >
+                {benchError}
+              </div>
+            )}
+
+            {benchReport && (
+              <div className="overflow-x-auto">
+                <table
+                  className="w-full text-left font-mono text-xs tabular-nums"
+                  data-testid="device-bench-table"
+                >
+                  <tbody>
+                    <tr className="border-b border-[var(--border-hairline)]/60">
+                      <th className="py-2 pr-4 font-medium text-[var(--text-muted)]">
+                        {t("results.deviceBenchBackend")}
+                      </th>
+                      <td className="py-2 font-semibold text-[var(--text-primary)]">
+                        {benchReport.backend}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-[var(--border-hairline)]/60">
+                      <th className="py-2 pr-4 font-medium text-[var(--text-muted)]">
+                        {t("results.deviceBenchMedianModel")}
+                      </th>
+                      <td className="py-2 font-semibold text-[var(--text-primary)]">
+                        {benchReport.median_model_ms.toFixed(2)} ms
+                      </td>
+                    </tr>
+                    <tr className="border-b border-[var(--border-hairline)]/60">
+                      <th className="py-2 pr-4 font-medium text-[var(--text-muted)]">
+                        {t("results.deviceBenchMedianTotal")}
+                      </th>
+                      <td className="py-2 font-semibold text-[var(--text-primary)]">
+                        {benchReport.median_total_ms.toFixed(2)} ms
+                      </td>
+                    </tr>
+                    <tr className="border-b border-[var(--border-hairline)]/60">
+                      <th className="py-2 pr-4 font-medium text-[var(--text-muted)]">
+                        {t("results.deviceBenchRuns")}
+                      </th>
+                      <td className="py-2 text-[var(--text-primary)]">
+                        {benchReport.timed_runs} ({benchReport.images} ×{" "}
+                        {benchReport.repeats}, +{benchReport.warmup_runs} ısınma)
+                      </td>
+                    </tr>
+                    <tr className="border-b border-[var(--border-hairline)]/60">
+                      <th className="py-2 pr-4 font-medium text-[var(--text-muted)]">
+                        {t("results.deviceBenchGpu")}
+                      </th>
+                      <td className="py-2 text-[var(--text-primary)]">
+                        {benchReport.gpu_adapter.available
+                          ? [
+                              benchReport.gpu_adapter.vendor,
+                              benchReport.gpu_adapter.architecture,
+                              benchReport.gpu_adapter.device,
+                              benchReport.gpu_adapter.description,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "WebGPU Adapter"
+                          : t("results.deviceBenchNoGpu")}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="py-2 pr-4 font-medium text-[var(--text-muted)]">
+                        {t("results.deviceBenchUa")}
+                      </th>
+                      <td className="py-2 break-all text-[var(--text-secondary)]">
+                        {benchReport.user_agent}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
     </div>
   );
 }

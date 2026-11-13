@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  AlertTriangle,
   Camera,
   FileVideo,
   Info,
@@ -127,6 +128,9 @@ export function LiveView() {
   const [totalBoxesDrawn, setTotalBoxesDrawn] = React.useState<number>(0);
   const [activeDetections, setActiveDetections] = React.useState<Detection[]>([]);
   const [backendLabel, setBackendLabel] = React.useState<string>("—");
+  const [wasmFallbackExpected, setWasmFallbackExpected] = React.useState<boolean>(
+    () => getOrtEpPrefFromUrl() === "wasm",
+  );
 
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -265,6 +269,45 @@ export function LiveView() {
       getOrtEpPrefFromUrl(),
     );
   }, [meta, setOrtProgress]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (getOrtEpPrefFromUrl() === "wasm") {
+      setWasmFallbackExpected(true);
+      return;
+    }
+    const gpu =
+      typeof navigator !== "undefined"
+        ? (
+            navigator as Navigator & {
+              gpu?: { requestAdapter?: () => Promise<unknown | null> };
+            }
+          ).gpu
+        : undefined;
+    if (!gpu || typeof gpu.requestAdapter !== "function") {
+      setWasmFallbackExpected(true);
+      return;
+    }
+    void gpu
+      .requestAdapter()
+      .then((adapter) => {
+        if (!cancelled) {
+          setWasmFallbackExpected(!adapter);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWasmFallbackExpected(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isWasmSlow =
+    backendLabel === "ort-wasm" ||
+    (backendLabel !== "ort-webgpu" && wasmFallbackExpected);
 
   React.useEffect(() => {
     const video = videoRef.current;
@@ -513,6 +556,17 @@ export function LiveView() {
             <Camera className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
             <span>{t("live.cameraNote")}</span>
           </div>
+
+          {isWasmSlow && (
+            <div
+              role="alert"
+              data-testid="live-wasm-warning"
+              className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700 dark:text-red-300"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+              <span>{t("live.wasmSlowWarning")}</span>
+            </div>
+          )}
 
           {errorMsg && (
             <div

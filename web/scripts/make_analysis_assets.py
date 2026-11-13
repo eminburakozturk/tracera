@@ -180,9 +180,21 @@ def main() -> None:
         for r in qp_rows
     ]
 
+    split_totals: dict[str, dict[str, object]] = {}
+    for split_name in ("test", "val"):
+        split_cards = [r for r in board_class_matrix if r["split"] == split_name]
+        split_counts = {
+            cls: sum(int(r["counts"][cls]) for r in split_cards)  # type: ignore[index]
+            for cls in CLASSES
+        }
+        split_totals[split_name] = {
+            "counts": split_counts,
+            "total": sum(int(r["total"]) for r in split_cards),  # type: ignore[arg-type]
+        }
+
     payload = {
         "classes": CLASSES,
-        "total_fp_rows": total_fp_rows,
+        "split_totals": split_totals,
         "board_class_matrix": board_class_matrix,
         "template_spots": template_spots,
         "template_clean_rows": template_clean_rows,
@@ -190,7 +202,11 @@ def main() -> None:
     }
 
     OUT_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[make_analysis_assets] Yazıldı: {OUT_JSON} ({total_fp_rows} FP satırı, {len(template_spots)} sabit nokta)")
+    print(
+        f"[make_analysis_assets] Yazıldı: {OUT_JSON} "
+        f"(test={split_totals['test']['total']}, val={split_totals['val']['total']}, "
+        f"{len(template_spots)} sabit nokta)"
+    )
 
 
 if __name__ == "__main__":
