@@ -14,9 +14,12 @@ from tracera_core.config import (
     PYTORCH_MODEL_PATH,
     REPO_ROOT,
     RESULTS_DIR,
+    TRACERA_MODEL_REPO_ENV,
     WEIGHTS_DIR,
+    ensure_weights_from_hf,
     get_repo_root,
     load_meta,
+    weights_ready,
 )
 from tracera_core.engine import (
     MODELS,
@@ -51,7 +54,10 @@ __all__ = [
     "PYTORCH_MODEL_PATH",
     "REPO_ROOT",
     "RESULTS_DIR",
+    "TRACERA_MODEL_REPO_ENV",
     "WEIGHTS_DIR",
+    "ensure_weights_from_hf",
+    "weights_ready",
     "DetectResult",
     "Detection",
     "ExplainResult",

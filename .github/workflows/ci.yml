@@ -1,0 +1,115 @@
+name: Tracera CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+env:
+  TRACERA_MODEL_REPO: ${{ vars.TRACERA_MODEL_REPO || 'ebboo/tracera-model' }}
+
+jobs:
+  python:
+    name: Python Core & API Tests (3.11 CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install CPU PyTorch and Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          grep -v '^onnxruntime-gpu' requirements.txt > /tmp/req-cpu.txt
+          pip install -r /tmp/req-cpu.txt onnxruntime huggingface_hub
+
+      - name: Run pytest (skip needs_weights if repo unavailable)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pytest -v -rs | tee /tmp/pytest_out.txt
+          {
+            echo "## Pytest Summary"
+            echo '```'
+            tail -n 25 /tmp/pytest_out.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    name: Web Lint, Vitest, Build & Mock E2E (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Lint & Vitest unit tests
+        run: |
+          npm run lint
+          npm test
+
+      - name: Build production bundle (dist)
+        run: npm run build
+
+      - name: Install Playwright Chromium & run Mock E2E
+        env:
+          CI: "true"
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test tests/e2e/ci_mock.spec.ts
+
+  linux-parity:
+    name: Linux OpenVINO INT8 Parity (Informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install CPU inference dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install ultralytics openvino opencv-python-headless numpy huggingface_hub
+
+      - name: Check Linux OpenVINO INT8 vs reference parity
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python scripts/ci_linux_parity.py --out results/linux_parity.csv
+          if [ -f results/linux_parity.csv ]; then
+            {
+              echo "## Linux OpenVINO INT8 Parity (Informational)"
+              cat results/linux_parity.csv
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Linux parity CSV artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-parity-csv
+          path: results/linux_parity.csv
+          if-no-files-found: warn

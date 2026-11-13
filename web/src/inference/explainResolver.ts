@@ -11,6 +11,7 @@ export interface ExplainResolveOptions {
   cloudSpaceId: string;
   file: File;
   detection: Detection;
+  cloudOnly?: boolean;
   onApiStatusChange?: (status: "online" | "offline", error?: string) => void;
   factories?: {
     mock?: () => Explainer;
@@ -51,7 +52,15 @@ export async function resolveExplain(
     return { result, source: "api" };
   }
 
-  // backendChoice === "ort": önce Yerel sunucu, çevrimdışıysa Bulut; asla Mock'a düşme.
+  // backendChoice === "ort": Android/no-sidecar modunda yalnız Bulut; masaüstü/webde önce Yerel sunucu, çevrimdışıysa Bulut.
+  if (opts.cloudOnly) {
+    const cloudResult = await mkCloud(opts.cloudSpaceId).explain(
+      opts.file,
+      opts.detection,
+    );
+    return { result: cloudResult, source: "cloud" };
+  }
+
   try {
     const result = await mkApi(opts.apiBaseUrl).explain(opts.file, opts.detection);
     opts.onApiStatusChange?.("online");

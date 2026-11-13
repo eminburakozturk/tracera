@@ -12,6 +12,7 @@ from pathlib import Path
 import cv2
 import httpx
 import numpy as np
+import pytest
 from gradio_client import Client, handle_file
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -23,6 +24,7 @@ from tracera_core import DEFAULT_CONF, detect_openvino  # noqa: E402
 VAL_IMAGE_PATH = REPO_ROOT / "app" / "examples" / "val_05_missing_hole_01.jpg"
 
 
+@pytest.mark.needs_weights
 def test_gradio_api_detect_and_explain() -> None:
     assert VAL_IMAGE_PATH.is_file()
     port = 7863

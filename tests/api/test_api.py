@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+
+pytestmark = pytest.mark.needs_weights
 from ultralytics import YOLO
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent

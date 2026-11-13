@@ -78,6 +78,7 @@
     "downloadOverlay": "Download Overlay PNG",
     "downloadZoom": "Download Zoom PNG",
     "apiRequiredNote": "Note: True LayerCAM gradient computation requires PyTorch and runs via the local API server or Cloud Space.",
+    "cloudOnlyNote": "Note: No local sidecar server is available on this platform; heatmaps run via Cloud Space only.",
     "sourceLabel": "Explanation Source",
     "sourceApi": "Local Server (FastAPI)",
     "sourceCloud": "Cloud ({{space}})",

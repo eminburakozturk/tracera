@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 from ultralytics import YOLO
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -73,6 +74,7 @@ def test_preprocess_letterbox_and_tensor() -> None:
     assert lb2.orig_w == img_bgr.shape[1] and lb2.orig_h == img_bgr.shape[0]
 
 
+@pytest.mark.needs_weights
 def test_detect_openvino_matches_reference_output() -> None:
     img_bgr = cv2.imread(str(VAL_IMAGE_PATH))
     assert img_bgr is not None
@@ -95,6 +97,7 @@ def test_detect_openvino_matches_reference_output() -> None:
         assert abs(max(d.conf for d in res.detections) - ref_max) < 1e-3
 
 
+@pytest.mark.needs_weights
 def test_explain_layercam_returns_rgb_arrays() -> None:
     img_bgr = cv2.imread(str(VAL_IMAGE_PATH))
     assert img_bgr is not None
@@ -118,7 +121,10 @@ def test_metrics_loader_matches_web_metrics() -> None:
         assert payload == json.loads(WEB_METRICS_PATH.read_text(encoding="utf-8"))
 
 
+@pytest.mark.needs_weights
 def test_detect_openvino_10_val_ultralytics_parity() -> None:
+    if not VAL_IMAGES_DIR.is_dir():
+        pytest.skip(f"Val goruntu dizini yok (CI): {VAL_IMAGES_DIR}")
     assert SAMPLES_JSON.is_file()
     samples = json.loads(SAMPLES_JSON.read_text(encoding="utf-8"))
     assert len(samples) == 10

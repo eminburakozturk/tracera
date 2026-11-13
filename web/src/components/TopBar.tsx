@@ -37,6 +37,7 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
   const apiBaseUrl = useAppStore((s) => s.apiBaseUrl);
   const setApiBaseUrl = useAppStore((s) => s.setApiBaseUrl);
   const apiHealth = useAppStore((s) => s.apiHealth);
+  const localApiAvailable = useAppStore((s) => s.localApiAvailable);
   const cloudSpaceId = useAppStore((s) => s.cloudSpaceId);
   const setCloudSpaceId = useAppStore((s) => s.setCloudSpaceId);
 
@@ -149,7 +150,9 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
-                  <SelectItem value="api">{t("backend.optApi")}</SelectItem>
+                  {localApiAvailable && (
+                    <SelectItem value="api">{t("backend.optApi")}</SelectItem>
+                  )}
                   <SelectItem value="cloud">{t("backend.optCloud")}</SelectItem>
                   <SelectItem value="ort" disabled={!ortEnabled}>
                     {t("backend.optOrt")}
@@ -190,7 +193,7 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
             />
           )}
 
-          {backendChoice === "api" && (
+          {localApiAvailable && backendChoice === "api" && (
             <div className="flex items-center gap-1.5">
               <Badge
                 variant={

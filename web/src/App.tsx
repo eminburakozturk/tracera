@@ -250,6 +250,7 @@ export function App() {
         cloudSpaceId: state.cloudSpaceId,
         file: img.file,
         detection: det,
+        cloudOnly: !state.localApiAvailable,
         onApiStatusChange: (status, error) => setApiHealth({ status, error }),
       });
       setExplainResult(result, source);
@@ -292,7 +293,10 @@ export function App() {
     let active = true;
     let cleanupSidecar: (() => void) | null = null;
 
-    const finishBootstrap = async (resolvedApiUrl: string, cachedOrt: boolean) => {
+    const finishBootstrap = async (
+      resolvedApiUrl: string | null,
+      cachedOrt: boolean,
+    ) => {
       const { data: loadedMetrics, source } = await loadMetrics(resolvedApiUrl);
       if (!active) return;
       setMetrics(loadedMetrics, source);
@@ -329,11 +333,13 @@ export function App() {
 
       if (inTauri) {
         setTauriState({ tauriMode: true });
-        setBackendChoice("api");
         cleanupSidecar = await connectTauriSidecar({
           onStarting: () => {
             if (!active) return;
+            setBackendChoice("api");
             setTauriState({
+              tauriPlatform: "windows",
+              localApiAvailable: true,
               tauriSidecarStatus: "starting",
               tauriSidecarError: null,
             });
@@ -343,6 +349,8 @@ export function App() {
             setApiBaseUrl(baseUrl);
             setBackendChoice("api");
             setTauriState({
+              tauriPlatform: "windows",
+              localApiAvailable: true,
               tauriSidecarStatus: "ready",
               tauriSidecarError: null,
             });
@@ -352,6 +360,17 @@ export function App() {
               })
               .catch(() => {});
             void finishBootstrap(baseUrl, cached);
+          },
+          onUnavailable: (platform) => {
+            if (!active) return;
+            setBackendChoice("ort");
+            setTauriState({
+              tauriPlatform: platform,
+              localApiAvailable: false,
+              tauriSidecarStatus: "idle",
+              tauriSidecarError: null,
+            });
+            void finishBootstrap(null, cached);
           },
           onError: (errMsg) => {
             if (!active) return;

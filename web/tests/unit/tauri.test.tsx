@@ -1,7 +1,8 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/App";
 import { DEFAULT_API_BASE_URL } from "../../src/inference/api/ApiDetector";
+import { resolveExplain } from "../../src/inference/explainResolver";
 import {
   hasTauriGlobalHint,
   isTauriApp,
@@ -47,6 +48,8 @@ describe("Tauri v2 köprü entegrasyonu (CONTRACT §5)", () => {
       backendChoice: "ort",
       apiBaseUrl: DEFAULT_API_BASE_URL,
       tauriMode: false,
+      tauriPlatform: null,
+      localApiAvailable: true,
       tauriSidecarStatus: "idle",
       tauriSidecarError: null,
       selectedImage: null,
@@ -190,5 +193,105 @@ describe("Tauri v2 köprü entegrasyonu (CONTRACT §5)", () => {
     });
     expect(useAppStore.getState().tauriSidecarStatus).toBe("error");
     expect(mockUnlisten).toHaveBeenCalled();
+  });
+
+  it("4) android (CONTRACT v1.2): get_platform=android hides starting screen, defaults to ort, hides api option, and restricts explain to Cloud", async () => {
+    (globalThis as Record<string, unknown>).isTauri = true;
+    mockIsTauri.mockReturnValue(true);
+
+    const status: SidecarStatus = {
+      port: 0,
+      base_url: "",
+      ready: false,
+      startup_ms: null,
+      error: null,
+      available: false,
+    };
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_platform") return "android";
+      if (cmd === "get_sidecar_status") return status;
+      throw new Error(`unexpected cmd: ${cmd}`);
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      const state = useAppStore.getState();
+      expect(state.tauriMode).toBe(true);
+      expect(state.tauriPlatform).toBe("android");
+      expect(state.localApiAvailable).toBe(false);
+      expect(state.backendChoice).toBe("ort");
+    });
+
+    expect(screen.queryByTestId("tauri-starting-screen")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tauri-error-screen")).not.toBeInTheDocument();
+    expect(mockListen).not.toHaveBeenCalled();
+
+    // Backend seçicisinde "Yerel sunucu" gizli olmalı
+    const trigger = screen.getByTestId("backend-select");
+    fireEvent.click(trigger);
+    expect(screen.queryByText(/Yerel sunucu/i)).not.toBeInTheDocument();
+
+    // Isı haritası yalnız Bulut'a gider, yerel API'ye dokunmaz
+    const apiExplain = vi.fn();
+    const cloudExplain = vi.fn(async () => ({
+      overlay_png: "",
+      zoom_png: "",
+      method: "layercam" as const,
+      layer: 4 as const,
+      timing: { pre_ms: 1, model_ms: 10, post_ms: 1, total_ms: 12 },
+    }));
+    const dummyFile = new File(["img"], "x.jpg", { type: "image/jpeg" });
+    const resolved = await resolveExplain({
+      backendChoice: "ort",
+      apiBaseUrl: DEFAULT_API_BASE_URL,
+      cloudSpaceId: "ebboo/tracera",
+      file: dummyFile,
+      detection: {
+        id: 1,
+        cls: "short",
+        cls_id: 3,
+        conf: 0.9,
+        box: [0, 0, 10, 10],
+      },
+      cloudOnly: true,
+      factories: {
+        api: () => ({ explain: apiExplain }),
+        cloud: () => ({ explain: cloudExplain }),
+      },
+    });
+    expect(resolved.source).toBe("cloud");
+    expect(apiExplain).not.toHaveBeenCalled();
+    expect(cloudExplain).toHaveBeenCalledTimes(1);
+  });
+
+  it("5) no-sidecar fallback (CONTRACT v1.2): available=false without get_platform=android also switches to ORT without starting screen", async () => {
+    (globalThis as Record<string, unknown>).isTauri = true;
+    mockIsTauri.mockReturnValue(true);
+
+    const status: SidecarStatus = {
+      port: 0,
+      base_url: "",
+      ready: false,
+      startup_ms: null,
+      error: null,
+      available: false,
+    };
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_platform") return "other";
+      if (cmd === "get_sidecar_status") return status;
+      throw new Error(`unexpected cmd: ${cmd}`);
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      const state = useAppStore.getState();
+      expect(state.tauriMode).toBe(true);
+      expect(state.localApiAvailable).toBe(false);
+      expect(state.backendChoice).toBe("ort");
+    });
+
+    expect(screen.queryByTestId("tauri-starting-screen")).not.toBeInTheDocument();
   });
 });

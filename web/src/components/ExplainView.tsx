@@ -30,6 +30,7 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
   const meta = useAppStore((s) => s.meta);
   const metrics = useAppStore((s) => s.metrics);
   const backendChoice = useAppStore((s) => s.backendChoice);
+  const localApiAvailable = useAppStore((s) => s.localApiAvailable);
   const selectedImage = useAppStore((s) => s.selectedImage);
   const detectResult = useAppStore((s) => s.detectResult);
   const selectedDetectionId = useAppStore((s) => s.selectedDetectionId);
@@ -71,7 +72,9 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle>{t("explain.title")}</CardTitle>
-              <CardDescription>{t("explain.apiRequiredNote")}</CardDescription>
+              <CardDescription>
+                {t(localApiAvailable ? "explain.apiRequiredNote" : "explain.cloudOnlyNote")}
+              </CardDescription>
             </div>
             {explainResult && (
               <div className="flex flex-wrap items-center gap-2">
@@ -92,7 +95,9 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
           {backendChoice === "ort" && (
             <div className="flex items-start gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3 text-xs text-[var(--text-primary)]">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" />
-              <span>{t("explain.apiRequiredNote")}</span>
+              <span>
+                {t(localApiAvailable ? "explain.apiRequiredNote" : "explain.cloudOnlyNote")}
+              </span>
             </div>
           )}
 

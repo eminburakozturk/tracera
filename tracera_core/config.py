@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -66,3 +67,55 @@ def load_meta(meta_path: Path | None = None) -> dict[str, Any]:
         "letterbox_pad": LETTERBOX_PAD,
         "classes": [CLASS_NAMES[i] for i in sorted(CLASS_NAMES)],
     }
+
+
+TRACERA_MODEL_REPO_ENV = "TRACERA_MODEL_REPO"
+
+
+def weights_ready(
+    openvino_path: Path | None = None,
+    pytorch_path: Path | None = None,
+) -> bool:
+    """Yerel OpenVINO INT8 ve PyTorch last.pt ağırlıklarının mevcut olup olmadığını doğrular."""
+    if os.environ.get("TRACERA_FORCE_NO_WEIGHTS") == "1":
+        return False
+    ov = openvino_path or OPENVINO_MODEL_PATH
+    pt = pytorch_path or PYTORCH_MODEL_PATH
+    return pt.is_file() and ov.is_dir() and any(ov.glob("*.xml"))
+
+
+def ensure_weights_from_hf(
+    repo_id: str | None = None,
+    weights_dir: Path | None = None,
+    openvino_path: Path | None = None,
+    pytorch_path: Path | None = None,
+) -> bool:
+    """Yerel ağırlıklar eksikse TRACERA_MODEL_REPO'dan indirir; mevcut ağırlığa dokunmaz."""
+    ov = openvino_path or OPENVINO_MODEL_PATH
+    pt = pytorch_path or PYTORCH_MODEL_PATH
+    if weights_ready(ov, pt):
+        return True
+    if os.environ.get("TRACERA_FORCE_NO_WEIGHTS") == "1":
+        return False
+
+    target_repo = (repo_id or os.environ.get(TRACERA_MODEL_REPO_ENV, "")).strip()
+    if not target_repo:
+        return False
+
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        return False
+
+    dst = weights_dir or WEIGHTS_DIR
+    try:
+        dst.mkdir(parents=True, exist_ok=True)
+        snapshot_download(
+            repo_id=target_repo,
+            local_dir=str(dst),
+            allow_patterns=["last.pt", "last_int8_openvino_model/**"],
+        )
+    except Exception:
+        return False
+
+    return weights_ready(ov, pt)

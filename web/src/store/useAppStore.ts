@@ -3,6 +3,7 @@ import { FALLBACK_META } from "../lib/meta";
 import { DEFAULT_API_BASE_URL } from "../inference/api/ApiDetector";
 import { DEFAULT_CLOUD_SPACE } from "../inference/cloud/CloudClient";
 import type { BackendChoice, ExplainSource, OrtProgress } from "../inference/types";
+import type { TauriPlatform } from "../platform/tauri";
 import type {
   DetectResult,
   ErrorAnalysisPayload,
@@ -59,6 +60,8 @@ interface AppState {
   ortModelCached: boolean | null;
 
   tauriMode: boolean;
+  tauriPlatform: TauriPlatform | null;
+  localApiAvailable: boolean;
   tauriSidecarStatus: "idle" | "starting" | "ready" | "error";
   tauriSidecarError: string | null;
 
@@ -90,6 +93,8 @@ interface AppState {
   setOrtModelCached: (cached: boolean | null) => void;
   setTauriState: (patch: {
     tauriMode?: boolean;
+    tauriPlatform?: TauriPlatform | null;
+    localApiAvailable?: boolean;
     tauriSidecarStatus?: "idle" | "starting" | "ready" | "error";
     tauriSidecarError?: string | null;
   }) => void;
@@ -126,6 +131,8 @@ export const useAppStore = create<AppState>((set) => ({
   ortModelCached: null,
 
   tauriMode: false,
+  tauriPlatform: null,
+  localApiAvailable: true,
   tauriSidecarStatus: "idle",
   tauriSidecarError: null,
 

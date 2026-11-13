@@ -78,6 +78,7 @@
     "downloadOverlay": "Overlay PNG İndir",
     "downloadZoom": "Yakın PNG İndir",
     "apiRequiredNote": "Not: Gerçek LayerCAM gradyan hesaplaması PyTorch gerektirdiğinden yerel API sunucusu veya Bulut Space üzerinden çalışır.",
+    "cloudOnlyNote": "Not: Bu platformda yerel yan sunucu bulunmadığından ısı haritası yalnız Bulut Space üzerinden hesaplanır.",
     "sourceLabel": "Açıklama Kaynağı",
     "sourceApi": "Yerel sunucu (FastAPI)",
     "sourceCloud": "Bulut ({{space}})",

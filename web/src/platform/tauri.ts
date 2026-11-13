@@ -1,9 +1,12 @@
+export type TauriPlatform = "windows" | "android" | "other";
+
 export interface SidecarStatus {
   port: number;
   base_url: string;
   ready: boolean;
   startup_ms: number | null;
   error: string | null;
+  available?: boolean;
 }
 
 export interface ApiReadyPayload {
@@ -27,6 +30,19 @@ export async function isTauriApp(): Promise<boolean> {
     return Boolean(isTauri());
   } catch {
     return false;
+  }
+}
+
+export async function getPlatform(): Promise<TauriPlatform> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const plat = await invoke<string>("get_platform");
+    if (plat === "windows" || plat === "android") {
+      return plat;
+    }
+    return "other";
+  } catch {
+    return "other";
   }
 }
 
@@ -55,6 +71,7 @@ export interface ConnectSidecarCallbacks {
   onStarting: () => void;
   onReady: (baseUrl: string, startupMs: number | null) => void;
   onError: (error: string) => void;
+  onUnavailable?: (platform: TauriPlatform) => void;
   pollIntervalMs?: number;
 }
 
@@ -92,12 +109,29 @@ export async function connectTauriSidecar(
     callbacks.onError(errMsg);
   };
 
+  const finishUnavailable = (platform: TauriPlatform) => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    callbacks.onUnavailable?.(platform);
+  };
+
+  const platform = await getPlatform();
+  if (platform === "android") {
+    finishUnavailable(platform);
+    return cleanup;
+  }
+
   unlisten = await listenApiReady((payload) => {
     void finishReady(payload.base_url, payload.startup_ms);
   });
 
   try {
     const status = await getSidecarStatus();
+    if (status.available === false) {
+      finishUnavailable(platform);
+      return cleanup;
+    }
     if (status.error) {
       finishError(status.error);
       return cleanup;
