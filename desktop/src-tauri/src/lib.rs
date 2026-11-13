@@ -1,12 +1,19 @@
 use serde::Serialize;
+#[cfg(not(target_os = "android"))]
 use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(not(target_os = "android"))]
 use std::net::{SocketAddr, TcpListener, TcpStream};
+#[cfg(not(target_os = "android"))]
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "android"))]
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+#[cfg(not(target_os = "android"))]
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager, RunEvent};
+#[cfg(not(target_os = "android"))]
+use tauri::{Emitter, Manager};
+use tauri::RunEvent;
 
 #[derive(Clone, Serialize)]
 pub struct ApiReadyPayload {
@@ -17,6 +24,7 @@ pub struct ApiReadyPayload {
 
 #[derive(Clone, Serialize)]
 pub struct SidecarStatusDto {
+    pub available: bool,
     pub port: u16,
     pub base_url: String,
     pub ready: bool,
@@ -25,12 +33,15 @@ pub struct SidecarStatusDto {
 }
 
 struct SidecarRuntime {
+    available: bool,
     ready: bool,
     startup_ms: Option<u64>,
     error: Option<String>,
+    #[cfg(not(target_os = "android"))]
     child: Option<Child>,
     #[cfg(windows)]
     job: Option<win_job::JobObject>,
+    #[cfg(not(target_os = "android"))]
     last_stderr: Vec<String>,
 }
 
@@ -42,18 +53,26 @@ pub struct SidecarController {
 }
 
 impl SidecarController {
-    fn new(port: u16) -> Self {
+    fn new(port: u16, available: bool) -> Self {
+        let base_url = if available && port > 0 {
+            format!("http://127.0.0.1:{}", port)
+        } else {
+            String::new()
+        };
         Self {
             port,
-            base_url: format!("http://127.0.0.1:{}", port),
+            base_url,
             stop_flag: Arc::new(AtomicBool::new(false)),
             runtime: Mutex::new(SidecarRuntime {
+                available,
                 ready: false,
                 startup_ms: None,
                 error: None,
+                #[cfg(not(target_os = "android"))]
                 child: None,
                 #[cfg(windows)]
                 job: None,
+                #[cfg(not(target_os = "android"))]
                 last_stderr: Vec::new(),
             }),
         }
@@ -62,6 +81,7 @@ impl SidecarController {
     fn status(&self) -> SidecarStatusDto {
         let rt = self.runtime.lock().expect("sidecar runtime lock poisoned");
         SidecarStatusDto {
+            available: rt.available,
             port: self.port,
             base_url: self.base_url.clone(),
             ready: rt.ready,
@@ -70,6 +90,7 @@ impl SidecarController {
         }
     }
 
+    #[cfg(not(target_os = "android"))]
     fn push_stderr_line(&self, line: String) {
         if let Ok(mut rt) = self.runtime.lock() {
             if rt.last_stderr.len() >= 25 {
@@ -81,18 +102,21 @@ impl SidecarController {
 
     fn shutdown(&self) {
         self.stop_flag.store(true, Ordering::SeqCst);
-        let Ok(mut rt) = self.runtime.lock() else {
-            return;
-        };
-        if let Some(mut child) = rt.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        #[cfg(windows)]
+        #[cfg(not(target_os = "android"))]
         {
-            // Dropping JobObject closes its Win32 handle, which terminates any remaining
-            // descendant processes via JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
-            rt.job.take();
+            let Ok(mut rt) = self.runtime.lock() else {
+                return;
+            };
+            if let Some(mut child) = rt.child.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            #[cfg(windows)]
+            {
+                // Dropping JobObject closes its Win32 handle, which terminates any remaining
+                // descendant processes via JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+                rt.job.take();
+            }
         }
     }
 }
@@ -230,6 +254,7 @@ mod win_job {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn pick_free_port() -> Result<u16, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("Bos port secilemedi: {e}"))?;
@@ -240,6 +265,7 @@ fn pick_free_port() -> Result<u16, String> {
     Ok(port)
 }
 
+#[cfg(not(target_os = "android"))]
 fn sidecar_binary_name() -> &'static str {
     if cfg!(windows) {
         "tracera-api.exe"
@@ -248,6 +274,7 @@ fn sidecar_binary_name() -> &'static str {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let bin = sidecar_binary_name();
     let mut candidates: Vec<PathBuf> = Vec::new();
@@ -284,6 +311,7 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Err(format!("Sidecar bulunamadi ({bin}). Kontrol edilen yollar: {checked}"))
 }
 
+#[cfg(not(target_os = "android"))]
 fn probe_health(port: u16) -> bool {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else {
@@ -310,6 +338,7 @@ fn probe_health(port: u16) -> bool {
     head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
 }
 
+#[cfg(not(target_os = "android"))]
 fn spawn_and_monitor_sidecar(
     app: &tauri::AppHandle,
     controller: Arc<SidecarController>,
@@ -430,11 +459,28 @@ fn get_sidecar_status(controller: tauri::State<'_, Arc<SidecarController>>) -> S
     controller.status()
 }
 
+#[tauri::command]
+fn get_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "android") {
+        "android"
+    } else {
+        "other"
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(not(target_os = "android"))]
     let launch_started = Instant::now();
-    let port = pick_free_port().expect("Bos yerel port secilemedi");
-    let controller = Arc::new(SidecarController::new(port));
+    #[cfg(not(target_os = "android"))]
+    let (port, available) = (pick_free_port().expect("Bos yerel port secilemedi"), true);
+    #[cfg(target_os = "android")]
+    let (port, available) = (0u16, false);
+
+    let controller = Arc::new(SidecarController::new(port, available));
+    #[cfg(not(target_os = "android"))]
     let controller_setup = Arc::clone(&controller);
 
     let app = tauri::Builder::default()
@@ -442,11 +488,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_api_port,
             get_api_base_url,
-            get_sidecar_status
+            get_sidecar_status,
+            get_platform
         ])
-        .setup(move |app| {
+        .setup(move |_app| {
+            #[cfg(not(target_os = "android"))]
             if let Err(err) =
-                spawn_and_monitor_sidecar(app.handle(), Arc::clone(&controller_setup), launch_started)
+                spawn_and_monitor_sidecar(_app.handle(), Arc::clone(&controller_setup), launch_started)
             {
                 let mut rt = controller_setup
                     .runtime
@@ -457,7 +505,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("Tracera masaustu uygulamasi baslatilamadi");
+        .expect("Tracera uygulamasi baslatilamadi");
 
     app.run(move |_app_handle, event| {
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
@@ -470,6 +518,7 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn picks_valid_ephemeral_port() {
         let port = pick_free_port().expect("should bind ephemeral port");
@@ -485,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn contract_v5_ipc_payload_keys_are_snake_case() {
+    fn contract_v5_v6_ipc_payload_keys_and_platform() {
         let ready_json = serde_json::to_value(ApiReadyPayload {
             port: 53817,
             base_url: "http://127.0.0.1:53817".to_string(),
@@ -498,15 +547,34 @@ mod tests {
         assert!(ready_json.get("baseUrl").is_none());
 
         let status_json = serde_json::to_value(SidecarStatusDto {
-            port: 53817,
-            base_url: "http://127.0.0.1:53817".to_string(),
+            available: false,
+            port: 0,
+            base_url: String::new(),
             ready: false,
             startup_ms: None,
             error: None,
         })
         .expect("serialize SidecarStatusDto");
-        assert_eq!(status_json["base_url"], "http://127.0.0.1:53817");
+        assert_eq!(status_json["available"], false);
+        assert_eq!(status_json["base_url"], "");
         assert!(status_json["startup_ms"].is_null());
         assert!(status_json.get("baseUrl").is_none());
+
+        let desktop_ctrl = SidecarController::new(53817, true);
+        let desktop_status = desktop_ctrl.status();
+        assert!(desktop_status.available);
+        assert_eq!(desktop_status.base_url, "http://127.0.0.1:53817");
+
+        let android_ctrl = SidecarController::new(0, false);
+        let android_status = android_ctrl.status();
+        assert!(!android_status.available);
+        assert!(!android_status.ready);
+        assert!(android_status.error.is_none());
+        assert_eq!(android_status.base_url, "");
+
+        #[cfg(windows)]
+        assert_eq!(get_platform(), "windows");
+        #[cfg(target_os = "android")]
+        assert_eq!(get_platform(), "android");
     }
 }
