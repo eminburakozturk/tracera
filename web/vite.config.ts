@@ -33,6 +33,7 @@ function ortAssetsPlugin(): Plugin {
   const ortDist = path.resolve(__dirname, "node_modules/onnxruntime-web/dist");
   const spikeValDir = path.resolve(__dirname, "../web_spike/val_images");
   const processedValDir = path.resolve(__dirname, "../data/yolo/grouped/val/images");
+  let resolvedOutDir = path.resolve(__dirname, "dist");
 
   const mimeMap: Record<string, string> = {
     ".wasm": "application/wasm",
@@ -44,6 +45,9 @@ function ortAssetsPlugin(): Plugin {
 
   return {
     name: "tracera-ort-assets",
+    configResolved(config) {
+      resolvedOutDir = path.resolve(config.root, config.build.outDir);
+    },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const cleanUrl = (req.url || "").split("?")[0];
@@ -100,6 +104,13 @@ function ortAssetsPlugin(): Plugin {
             fs.rmSync(path.join(assetsDir, fname), { force: true });
           }
         }
+      }
+    },
+    closeBundle() {
+      // Kullanılmayan INT8 ONNX modeli yalnız web/public/models/ altında kalsın; dist ve web_space'e girmesin
+      const unusedInt8 = path.join(resolvedOutDir, "models", "tracera_1024_int8.onnx");
+      if (fs.existsSync(unusedInt8)) {
+        fs.rmSync(unusedInt8, { force: true });
       }
     },
   };
