@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from pathlib import Path
@@ -71,11 +72,17 @@ def result_to_detect_result(res, width: int, height: int, classes: list[str], ba
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="10 val görüntüsü için DetectResult referans JSON'larını üretir.")
+    parser.add_argument("--conf", type=float, default=None, help="Güven eşiği (varsayılan: meta.json conf)")
+    parser.add_argument("--suffix", type=str, default="", help="Dosya son eki (örn. _c025)")
+    args = parser.parse_args()
+
     meta = json.loads(META_PATH.read_text(encoding="utf-8"))
     imgsz = int(meta["imgsz"])
-    conf = float(meta["conf"])
+    conf = float(meta["conf"]) if args.conf is None else float(args.conf)
     iou_nms = float(meta["iou_nms"])
     classes = list(meta["classes"])
+    suffix = args.suffix
 
     REF_DIR.mkdir(parents=True, exist_ok=True)
     SAMPLES_JSON.write_text(json.dumps(VAL_SAMPLE_FILES, indent=2) + "\n", encoding="utf-8")
@@ -108,7 +115,7 @@ def main() -> None:
         )[0]
         pt_ms = (time.perf_counter() - t0) * 1000.0
         out_pt = result_to_detect_result(res_pt, w, h, classes, backend="pytorch", wall_ms=pt_ms)
-        (REF_DIR / f"{stem}__pytorch.json").write_text(
+        (REF_DIR / f"{stem}__pytorch{suffix}.json").write_text(
             json.dumps(out_pt, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
@@ -124,7 +131,7 @@ def main() -> None:
         )[0]
         ov_ms = (time.perf_counter() - t1) * 1000.0
         out_ov = result_to_detect_result(res_ov, w, h, classes, backend="openvino-int8", wall_ms=ov_ms)
-        (REF_DIR / f"{stem}__openvino-int8.json").write_text(
+        (REF_DIR / f"{stem}__openvino-int8{suffix}.json").write_text(
             json.dumps(out_ov, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
