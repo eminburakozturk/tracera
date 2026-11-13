@@ -7,7 +7,7 @@ Tracera; PKU-Market-PCB veri seti üzerinde eğitilmiş YOLO11s (`1024×1024`) m
 | Dosya | Platform | Boyut | SHA-256 |
 |---|---|---:|---|
 | `Tracera_1.0.0_x64-setup.exe` | Windows (`x86_64`) | 321.30 MiB (336,910,025 bayt) | `95e5756b027e4115130c9323af664d78b07ed6950af86e8870ba3205d259213e` |
-| `Tracera_1.0.0_android_arm64.apk` | Android (`arm64-v8a`) | 58.29 MiB (61,122,875 bayt) | `aa02fba962e102f8cd39103a03cbbe33c46e437afe701b5ef45f5f577bd45b48` |
+| `Tracera_1.0.0_android_arm64.apk` | Android (`arm64-v8a`) | 58.29 MiB (61,123,275 bayt) | `ecadf956d04065a335b8d577e07a296f41c2781f26848b0570389a58bbe17559` |
 | `SHA256SUMS.txt` | Tümü | 194 bayt | — |
 
 - **Windows Masaüstü (`Tracera_1.0.0_x64-setup.exe`)**: Tauri 2 arayüzü + yerleşik CPU FastAPI yan sunucusu (`tracera-api`, OpenVINO INT8 tespit + Katman 4 LayerCAM ısı haritası) ve isteğe bağlı tarayıcı (`ort-webgpu` / `ort-wasm`) çıkarımı. Kurulum sonrası disk kullanımı yaklaşık `1.05 GiB`.
