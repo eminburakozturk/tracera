@@ -81,7 +81,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeTab: "detect",
   theme: "dark",
   lang: "tr",
-  backendChoice: "mock",
+  backendChoice: "ort",
   apiBaseUrl: DEFAULT_API_BASE_URL,
   apiHealth: { status: "unknown" },
   meta: FALLBACK_META,

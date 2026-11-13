@@ -21,7 +21,7 @@ import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
 import { useAppStore } from "./store/useAppStore";
 
-export const ORT_ENABLED = false;
+export const ORT_ENABLED = true;
 
 export function App() {
   const { t, i18n } = useTranslation();
@@ -75,10 +75,12 @@ export function App() {
       return new ApiDetector(apiBaseUrl);
     }
     if (backendChoice === "ort") {
-      return new OrtDetector();
+      return new OrtDetector(useAppStore.getState().meta, (p) =>
+        setOrtProgress(p),
+      );
     }
     return new MockDetector();
-  }, [apiBaseUrl, backendChoice]);
+  }, [apiBaseUrl, backendChoice, setOrtProgress]);
 
   const createExplainer = React.useCallback((): Explainer => {
     if (backendChoice === "mock") {

@@ -568,7 +568,10 @@ export function DetectView({
                   {filteredDetections.length}
                 </Badge>
               </div>
-              <CardDescription>{t("detect.selectHint")}</CardDescription>
+              <CardDescription>
+                {t("detect.selectHint")}
+                {backendChoice === "ort" && ` ${t("explain.apiRequiredNote")}`}
+              </CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-3">

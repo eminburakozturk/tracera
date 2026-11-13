@@ -8,6 +8,9 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:5173",
     channel: "chrome",
+    launchOptions: {
+      args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist"],
+    },
     trace: "retain-on-failure",
   },
   webServer: {

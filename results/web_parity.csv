@@ -1,0 +1,12 @@
+image,backend,pt_count_025,ort_count_025,matched_025,mean_iou,mean_abs_dconf,pt_count_0395,ort_count_0395,diff_0395,model_ms,total_ms
+05_missing_hole_01.jpg,ort-webgpu,3,6,3,0.990649,0.000451,3,3,0,54.93,137.37
+05_open_circuit_01.jpg,ort-webgpu,3,6,3,0.990130,0.000408,3,3,0,41.13,111.82
+05_short_01.jpg,ort-webgpu,4,5,4,0.990652,0.004265,4,3,-1,47.13,117.66
+05_spur_01.jpg,ort-webgpu,4,6,4,0.990173,0.000345,4,4,0,41.17,119.29
+05_spurious_copper_01.jpg,ort-webgpu,4,8,4,0.990014,0.001116,4,4,0,40.30,111.82
+11_missing_hole_01.jpg,ort-webgpu,5,6,5,0.993860,0.001663,5,5,0,45.73,119.97
+11_mouse_bite_01.jpg,ort-webgpu,5,5,5,0.989711,0.001902,5,5,0,39.08,112.46
+11_open_circuit_01.jpg,ort-webgpu,5,5,5,0.987438,0.000997,5,5,0,45.64,114.25
+11_spur_01.jpg,ort-webgpu,5,6,5,0.993131,0.000726,5,5,0,40.16,117.07
+11_spurious_copper_01.jpg,ort-webgpu,5,5,5,0.990893,0.002542,5,5,0,42.07,109.45
+SUMMARY,ort-webgpu,43,-,43,0.990718,0.001503,-,-,1.0000,-,-
