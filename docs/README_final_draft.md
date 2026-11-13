@@ -186,7 +186,7 @@ flowchart LR
 
 - **Statik Web / Hugging Face Static Space (`web_space/`):** Sunucu GPU'su gerektirmeden doğrudan kullanıcı tarayıcısında ONNX Runtime Web (WebGPU öncelikli, yoksa tek iş parçacıklı WASM) ile `1024×1024` FP32 ONNX çıkarımı yapar.
 - **PWA (Progressive Web App):** Uygulama kabuğunu Service Worker ile önbelleğe alır; ONNX modeli ve ORT çalışma zamanını yalnızca ilk tespitte indirerek sonraki açılışlarda çevrimdışı tespit sunar.
-- **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `Tracera_1.0.0_x64-setup.exe`, `321.30 MiB`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).
+- **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `Tracera_1.0.0_x64-setup.exe`, `315.03 MiB`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).
 - **Android APK (Tauri 2 WebView — `Tracera_1.0.0_android_arm64.apk`, `58.29 MiB` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = "android"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.
 
 ### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)
@@ -218,7 +218,7 @@ Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13 Kasım kay
 
 | Ölçüm | Değer | Not |
 |---|---|---|
-| NSIS kurulum dosyası (`Tracera_1.0.0_x64-setup.exe`) | **321.30 MiB** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |
+| NSIS kurulum dosyası (`Tracera_1.0.0_x64-setup.exe`) | **315.03 MiB** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |
 | Diskteki kurulu boyut | **1.05 GiB** | Web arayüzü + Python FastAPI CPU sidecar + OpenVINO INT8 / PyTorch ağırlıkları |
 | Pencere açılış süresi | **0.8 s** | Tauri WebView2 penceresi |
 | Yerel motor hazır süresi | **~7.3 s** (soğuk ilk açılış **9.8 s**) | Rastgele yerel port üzerinde OpenVINO INT8 + LayerCAM yüklemesi |
