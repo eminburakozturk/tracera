@@ -355,6 +355,9 @@ def _check_forbidden(markdown: str, everywhere_section: str) -> None:
         "eşleşme 0.7",
         "kararlar.md` #65",
         "kararlar.md #65",
+        "<owner>",
+        "<repo>",
+        "yer tutucu",
     ):
         if term in lower_all:
             raise ValueError(f"Yasak veya guncel olmayan ifade tespit edildi: {term!r}")
@@ -383,23 +386,68 @@ def _check_forbidden(markdown: str, everywhere_section: str) -> None:
 
 def build_final_readme_draft() -> str:
     data = _collect_data()
-    base_lines = README_PATH.read_text(encoding="utf-8").splitlines()
+    raw_base = README_PATH.read_text(encoding="utf-8")
+    # Zaten v1.0.0 yapisina donusturulmus README.md uzerinde yeniden calisilirsa
+    # yalnizca veri odakli bolumleri (Bölüm 7 ve English Summary) tazele.
+    everywhere_block = _build_everywhere_section(data)
+    two_way_pct_1dp = f"{float(data['parity_summary']['two_way_match_pct']):.1f}%"
+    n_parity_imgs = len(data["parity_images"])
+    phone_model_ms_int = round(float(data["phone"]["medyan_model_ms"]))
+    english_platform_bullet = (
+        f"- **Runs everywhere from one React/TypeScript codebase:** in-browser inference with "
+        f"ONNX Runtime Web (WebGPU, WASM fallback; {two_way_pct_1dp} two-way box match with PyTorch "
+        f"on {n_parity_imgs} val images), offline PWA, Windows desktop app (Tauri 2 + bundled "
+        f"FastAPI/OpenVINO engine, LayerCAM offline) and Android APK (on-device WebGPU, measured "
+        f"on one phone: {phone_model_ms_int} ms model median; heatmaps via cloud)."
+    )
+
+    draft_comment = "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->\n\n"
+
+    if "## 7. Her yerde çalışır: web, masaüstü, Android" in raw_base:
+        body = re.sub(r"^<!-- Bu taslak .*?-->\s*", "", raw_base, count=1, flags=re.DOTALL)
+        sec7_re = re.compile(
+            r"## 7\. Her yerde çalışır: web, masaüstü, Android.*?\n---(?=\n\n## 8\.)",
+            flags=re.DOTALL,
+        )
+        if not sec7_re.search(body):
+            raise ValueError("Mevcut README.md icinde Bölüm 7 sinirlari bulunamadi")
+        body = sec7_re.sub(lambda _m: everywhere_block, body, count=1)
+
+        eng_bullet_re = re.compile(
+            r"^- \*\*Runs everywhere from one React/TypeScript codebase:\*\*.*$",
+            flags=re.MULTILINE,
+        )
+        if eng_bullet_re.search(body):
+            body = eng_bullet_re.sub(lambda _m: english_platform_bullet, body, count=1)
+        else:
+            body = body.replace("\nCopyright (C)", f"\n{english_platform_bullet}\n\nCopyright (C)", 1)
+
+        draft = f"{draft_comment}{body}"
+        _check_forbidden(draft, everywhere_block)
+        return draft.rstrip() + "\n"
+
+    base_lines = raw_base.splitlines()
+
+    demo_banner_block = [
+        "",
+        "![Tracera demo](results/demo/tracera_demo.gif)",
+        "",
+        "Tam demo (50 sn): [results/demo/tracera_demo.mp4](results/demo/tracera_demo.mp4)",
+    ]
 
     top_links_block = [
-        "[![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml) *(CI rozeti yer tutucusu)*",
+        "[![CI](https://github.com/eminburakozturk/tracera/actions/workflows/ci.yml/badge.svg)](https://github.com/eminburakozturk/tracera/actions/workflows/ci.yml)",
         "",
-        "> - **Canlı Statik Web Demosu (Tarayıcıda ONNX):** `https://huggingface.co/spaces/ebboo/tracera-web` *(yer tutucu — statik web paketi)*",
+        "> - **Canlı Statik Web Demosu (Tarayıcıda ONNX):** [huggingface.co/spaces/ebboo/tracera-web](https://huggingface.co/spaces/ebboo/tracera-web) *(yayında — tarayıcıda ONNX)*",
         "> - **Bulut Demo & LayerCAM API (Hugging Face Spaces, Gradio):** [huggingface.co/spaces/ebboo/tracera](https://huggingface.co/spaces/ebboo/tracera)",
         "> - **Model Deposu (Hugging Face Hub):** [huggingface.co/ebboo/tracera-model](https://huggingface.co/ebboo/tracera-model) *(last.pt, OpenVINO INT8, FP32 ONNX, meta.json)*",
-        "> - **Kurulum Paketleri (GitHub Releases — Windows EXE & Android APK):** `[GitHub Releases (<OWNER>/<REPO>) — Windows EXE + Android APK](https://github.com/<OWNER>/<REPO>/releases)` *(yer tutucu)*",
+        "> - **Kurulum Paketleri (GitHub Releases — Windows EXE & Android APK):** [GitHub Releases (eminburakozturk/tracera) — Windows EXE + Android APK](https://github.com/eminburakozturk/tracera/releases)",
     ]
 
     platform_note_block = [
         "",
         "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.",
     ]
-
-    everywhere_block = _build_everywhere_section(data)
 
     app_build_cmds = [
         "",
@@ -431,22 +479,12 @@ def build_final_readme_draft() -> str:
         "```",
     ]
 
-    two_way_pct_1dp = f"{float(data['parity_summary']['two_way_match_pct']):.1f}%"
-    n_parity_imgs = len(data["parity_images"])
-    phone_model_ms_int = round(float(data["phone"]["medyan_model_ms"]))
-    english_platform_bullet = (
-        f"- **Runs everywhere from one React/TypeScript codebase:** in-browser inference with "
-        f"ONNX Runtime Web (WebGPU, WASM fallback; {two_way_pct_1dp} two-way box match with PyTorch "
-        f"on {n_parity_imgs} val images), offline PWA, Windows desktop app (Tauri 2 + bundled "
-        f"FastAPI/OpenVINO engine, LayerCAM offline) and Android APK (on-device WebGPU, measured "
-        f"on one phone: {phone_model_ms_int} ms model median; heatmaps via cloud)."
-    )
-
     out_lines: list[str] = [
         "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->",
         "",
     ]
 
+    inserted_demo_banner = False
     replaced_demo_line = False
     inserted_platform_note = False
 
@@ -457,6 +495,10 @@ def build_final_readme_draft() -> str:
             continue
 
         out_lines.append(line)
+
+        if not inserted_demo_banner and line.startswith("# Tracera:"):
+            out_lines.extend(demo_banner_block)
+            inserted_demo_banner = True
 
         if not inserted_platform_note and line.startswith("> **Metodolojik Not:**"):
             out_lines.extend(platform_note_block)
@@ -505,11 +547,22 @@ def build_final_readme_draft() -> str:
     return draft.rstrip() + "\n"
 
 
+def strip_draft_comment(markdown: str) -> str:
+    return re.sub(r"^<!-- Bu taslak .*?-->\s*", "", markdown, count=1, flags=re.DOTALL)
+
+
 def main() -> int:
+    import sys
+
+    write_readme = "--write-readme" in sys.argv[1:]
     content = build_final_readme_draft()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(content, encoding="utf-8", newline="\n")
     print(f"[make_readme_final] Yazildi: {OUT_PATH} ({len(content.splitlines())} satir)")
+    if write_readme:
+        readme_text = strip_draft_comment(content)
+        README_PATH.write_text(readme_text, encoding="utf-8", newline="\n")
+        print(f"[make_readme_final] Yazildi: {README_PATH} ({len(readme_text.splitlines())} satir)")
     return 0
 
 

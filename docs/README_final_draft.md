@@ -2,14 +2,18 @@
 
 # Tracera: Açıklanabilir ve Edge Uyumlu PCB Hata Tespiti
 
+![Tracera demo](results/demo/tracera_demo.gif)
+
+Tam demo (50 sn): [results/demo/tracera_demo.mp4](results/demo/tracera_demo.mp4)
+
 **Tracera**, baskı devre kartlarındaki (PCB) 6 sınıf üretim kusurunu (**missing_hole**, **mouse_bite**, **open_circuit**, **short**, **spur**, **spurious_copper**) YOLO11s ile tespit eden, kartlar arası genellemeyi kart bazlı bölmeyle ölçen, tespitleri doğrulanmış bir **LayerCAM (Katman 4)** ısı haritasıyla açıklayan ve **OpenVINO INT8 / TensorRT FP16** ile hızlandırılan bir sistemdir.
 
-[![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml) *(CI rozeti yer tutucusu)*
+[![CI](https://github.com/eminburakozturk/tracera/actions/workflows/ci.yml/badge.svg)](https://github.com/eminburakozturk/tracera/actions/workflows/ci.yml)
 
-> - **Canlı Statik Web Demosu (Tarayıcıda ONNX):** `https://huggingface.co/spaces/ebboo/tracera-web` *(yer tutucu — statik web paketi)*
+> - **Canlı Statik Web Demosu (Tarayıcıda ONNX):** [huggingface.co/spaces/ebboo/tracera-web](https://huggingface.co/spaces/ebboo/tracera-web) *(yayında — tarayıcıda ONNX)*
 > - **Bulut Demo & LayerCAM API (Hugging Face Spaces, Gradio):** [huggingface.co/spaces/ebboo/tracera](https://huggingface.co/spaces/ebboo/tracera)
 > - **Model Deposu (Hugging Face Hub):** [huggingface.co/ebboo/tracera-model](https://huggingface.co/ebboo/tracera-model) *(last.pt, OpenVINO INT8, FP32 ONNX, meta.json)*
-> - **Kurulum Paketleri (GitHub Releases — Windows EXE & Android APK):** `[GitHub Releases (<OWNER>/<REPO>) — Windows EXE + Android APK](https://github.com/<OWNER>/<REPO>/releases)` *(yer tutucu)*
+> - **Kurulum Paketleri (GitHub Releases — Windows EXE & Android APK):** [GitHub Releases (eminburakozturk/tracera) — Windows EXE + Android APK](https://github.com/eminburakozturk/tracera/releases)
 
 ---
 
@@ -242,7 +246,7 @@ Tarayıcı (`FP32 ONNX`) ile yerel masaüstü yan sunucusu (`OpenVINO INT8`) sı
 
 ### Çevrimdışı Kullanım, PWA ve İlk İndirme Boyutu
 
-- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**1.09 MB**). Model açılışta kendiliğinden indirilmez.
+- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**1.10 MB**). Model açılışta kendiliğinden indirilmez.
 - **İlk tespitte çalışma zamanı indirmesi:** FP32 ONNX (**36.43 MB**) + WebGPU/tek iş parçacıklı WASM JSEP çalışma zamanı (**28.15 MB**) olmak üzere yaklaşık **~65 MB** CacheFirst stratejisiyle indirilir ve önbelleğe alınır. Kullanılmayan `tracera_1024_int8.onnx` üretim paketine (`dist/` ve `web_space/`) dahil edilmez.
 - **Çevrimdışı devam:** İlk tespit sonrasında internet kesilse bile tarayıcı içi tespit ("Cihazda") çevrimdışı çalışmaya devam eder.
 
