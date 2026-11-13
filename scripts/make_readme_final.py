@@ -1,9 +1,11 @@
 """README son hali taslagi uretici: docs/README_final_draft.md.
 
-Mevcut README.md dosyasindaki Claude denetimli metni ve bolum numaralarini KORUR;
-ust baglantilari, platform parite notunu, "Her yerde calisir: web, masaustu, Android"
-bolumunu (CSV'lerden ve KARARLAR.md'den sayisal verilerle) ve web/Tauri calistirma
-komutlarini ekler. README.md dosyasina DOKUNMAZ.
+Mevcut README.md dosyasindaki Claude denetimli ana metni KORUR; ust baglantilari,
+platform parite notunu, 7. bolum olarak "Her yerde calisir: web, masaustu, Android"
+bolumunu (results/*.csv, release/SHA256SUMS.txt, docs/RELEASE_NOTES_v1.0.0.md ve
+KARARLAR.md verilerinden), sonraki bolum numaralarinin (8-11) ve Bolum atiflarinin
+kaydirilmasini, web/EXE/Android derleme komutlarini ve English Summary platform
+maddesini ekler. README.md dosyasina DOKUNMAZ.
 """
 
 from __future__ import annotations
@@ -12,7 +14,6 @@ import csv
 import json
 import re
 import statistics
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 README_PATH = REPO_ROOT / "README.md"
 KARARLAR_PATH = REPO_ROOT / "KARARLAR.md"
 RESULTS_DIR = REPO_ROOT / "results"
+RELEASE_DIR = REPO_ROOT / "release"
+RELEASE_NOTES_PATH = REPO_ROOT / "docs" / "RELEASE_NOTES_v1.0.0.md"
 WEB_DIR = REPO_ROOT / "web"
 OUT_PATH = REPO_ROOT / "docs" / "README_final_draft.md"
 
@@ -33,8 +36,7 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 def _num(val: Any) -> float | None:
     try:
-        v = float(str(val).strip())
-        return v
+        return float(str(val).strip())
     except (TypeError, ValueError):
         return None
 
@@ -57,7 +59,7 @@ def _measure_precache_mb() -> str:
 
 
 def _extract_desktop_metrics() -> dict[str, str]:
-    """KARARLAR.md #65 ve #67'deki olculmus masaustu / APK paket metriklerini cikarir."""
+    """KARARLAR.md 13 Kasim kaydindaki olculmus masaustu metriklerini cikarir."""
     text = KARARLAR_PATH.read_text(encoding="utf-8")
     m65 = re.search(
         r"NSIS kurulum (\d+(?:\.\d+)? MiB), kurulu (\d+(?:\.\d+)? GiB), "
@@ -67,10 +69,7 @@ def _extract_desktop_metrics() -> dict[str, str]:
         text,
     )
     if not m65:
-        raise ValueError("KARARLAR.md #65 masaustu metrikleri bulunamadi")
-    m67 = re.search(r"Android APK kabul:\s*(\d+(?:\.\d+)? MiB)", text)
-    if not m67:
-        raise ValueError("KARARLAR.md #67 APK boyutu bulunamadi")
+        raise ValueError("KARARLAR.md 13 Kasim masaustu metrikleri bulunamadi")
     return {
         "nsis_mib": m65.group(1),
         "installed_gib": m65.group(2),
@@ -79,11 +78,75 @@ def _extract_desktop_metrics() -> dict[str, str]:
         "sidecar_cold_s": m65.group(5),
         "detect_ms": m65.group(6),
         "explain_s": m65.group(7),
-        "apk_mib": m67.group(1),
     }
 
 
-def _build_everywhere_section() -> str:
+def _extract_release_artifacts() -> dict[str, str]:
+    """APK/EXE adini, boyutunu ve SHA-256 ozetini release/ veya RELEASE_NOTES'tan okur."""
+    sums_path = RELEASE_DIR / "SHA256SUMS.txt"
+    apk_name = ""
+    apk_mib = ""
+    apk_sha = ""
+    exe_name = ""
+    exe_mib = ""
+    exe_sha = ""
+
+    if sums_path.is_file():
+        for raw_line in sums_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split(None, 1)
+            if len(parts) != 2:
+                continue
+            sha, fname = parts[0], parts[1].strip()
+            fpath = RELEASE_DIR / fname
+            if fname.endswith(".apk"):
+                apk_name = fname
+                apk_sha = sha
+                if fpath.is_file():
+                    apk_mib = f"{fpath.stat().st_size / (1024 * 1024):.2f} MiB"
+            elif fname.endswith(".exe"):
+                exe_name = fname
+                exe_sha = sha
+                if fpath.is_file():
+                    exe_mib = f"{fpath.stat().st_size / (1024 * 1024):.2f} MiB"
+
+    if (not apk_mib or not exe_mib) and RELEASE_NOTES_PATH.is_file():
+        rn_text = RELEASE_NOTES_PATH.read_text(encoding="utf-8")
+        if not apk_mib:
+            m_apk = re.search(
+                r"\|\s*`([^`]+\.apk)`\s*\|[^|]+\|\s*([0-9]+(?:\.[0-9]+)?\s*MiB)[^|]*\|\s*`([0-9a-f]{64})`",
+                rn_text,
+            )
+            if m_apk:
+                apk_name = apk_name or m_apk.group(1)
+                apk_mib = m_apk.group(2)
+                apk_sha = apk_sha or m_apk.group(3)
+        if not exe_mib:
+            m_exe = re.search(
+                r"\|\s*`([^`]+\.exe)`\s*\|[^|]+\|\s*([0-9]+(?:\.[0-9]+)?\s*MiB)[^|]*\|\s*`([0-9a-f]{64})`",
+                rn_text,
+            )
+            if m_exe:
+                exe_name = exe_name or m_exe.group(1)
+                exe_mib = m_exe.group(2)
+                exe_sha = exe_sha or m_exe.group(3)
+
+    if not apk_mib:
+        raise ValueError("APK boyutu release/SHA256SUMS.txt veya docs/RELEASE_NOTES_v1.0.0.md icinden okunamadi")
+
+    return {
+        "apk_name": apk_name or "Tracera_android_arm64.apk",
+        "apk_mib": apk_mib,
+        "apk_sha": apk_sha,
+        "exe_name": exe_name or "Tracera_x64-setup.exe",
+        "exe_mib": exe_mib,
+        "exe_sha": exe_sha,
+    }
+
+
+def _collect_data() -> dict[str, Any]:
     web_parity_rows = _read_csv(RESULTS_DIR / "web_parity.csv")
     parity_images = [r for r in web_parity_rows if r["image"] != "SUMMARY"]
     parity_summary = next((r for r in web_parity_rows if r["image"] == "SUMMARY"), None)
@@ -130,15 +193,66 @@ def _build_everywhere_section() -> str:
         raise FileNotFoundError("ort-wasm-simd-threaded.jsep.wasm bulunamadi")
     onnx_mb = onnx_bytes / (1024 * 1024)
     wasm_mb = wasm_path.stat().st_size / (1024 * 1024)
-    first_detect_mb = round(onnx_mb + wasm_mb)
-    precache_mb = _measure_precache_mb()
 
-    desk = _extract_desktop_metrics()
     phone_rows = _read_csv(RESULTS_DIR / "device_bench_phone.csv")
-    phone = phone_rows[0]
+    if not phone_rows:
+        raise ValueError("results/device_bench_phone.csv bos")
+
+    return {
+        "parity_images": parity_images,
+        "parity_summary": parity_summary,
+        "parity_med_model": parity_med_model,
+        "parity_med_total": parity_med_total,
+        "wgpu_fp32": wgpu_fp32,
+        "wgpu_int8": wgpu_int8,
+        "wasm_fp32": wasm_fp32,
+        "wasm_int8": wasm_int8,
+        "vid_wgpu": vid_wgpu,
+        "vid_wasm": vid_wasm,
+        "qp025": qp025,
+        "qp395": qp395,
+        "gpu_hw": gpu_hw,
+        "cpu_hw": cpu_hw,
+        "b05_desc": b05_desc,
+        "onnx_mb": onnx_mb,
+        "wasm_mb": wasm_mb,
+        "first_detect_mb": round(onnx_mb + wasm_mb),
+        "precache_mb": _measure_precache_mb(),
+        "desk": _extract_desktop_metrics(),
+        "rel": _extract_release_artifacts(),
+        "phone": phone_rows[0],
+    }
+
+
+def _build_everywhere_section(data: dict[str, Any]) -> str:
+    parity_images = data["parity_images"]
+    parity_summary = data["parity_summary"]
+    parity_med_model = data["parity_med_model"]
+    parity_med_total = data["parity_med_total"]
+    wgpu_fp32 = data["wgpu_fp32"]
+    wgpu_int8 = data["wgpu_int8"]
+    wasm_fp32 = data["wasm_fp32"]
+    wasm_int8 = data["wasm_int8"]
+    vid_wgpu = data["vid_wgpu"]
+    vid_wasm = data["vid_wasm"]
+    qp025 = data["qp025"]
+    qp395 = data["qp395"]
+    gpu_hw = data["gpu_hw"]
+    cpu_hw = data["cpu_hw"]
+    b05_desc = data["b05_desc"]
+    onnx_mb = data["onnx_mb"]
+    wasm_mb = data["wasm_mb"]
+    first_detect_mb = data["first_detect_mb"]
+    precache_mb = data["precache_mb"]
+    desk = data["desk"]
+    rel = data["rel"]
+    phone = data["phone"]
+
+    int8_note = "INT8 dinamik ONNX elendi (WebGPU'da çalışmadı, WASM'da doğruluk düştü)"
+    exe_size_label = rel["exe_mib"] or desk["nsis_mib"]
 
     lines = [
-        "## Her yerde çalışır: web, masaüstü, Android",
+        "## 7. Her yerde çalışır: web, masaüstü, Android",
         "",
         "### Mimari",
         "",
@@ -154,8 +268,8 @@ def _build_everywhere_section() -> str:
         "",
         "- **Statik Web / Hugging Face Static Space (`web_space/`):** Sunucu GPU'su gerektirmeden doğrudan kullanıcı tarayıcısında ONNX Runtime Web (WebGPU öncelikli, yoksa tek iş parçacıklı WASM) ile `1024×1024` FP32 ONNX çıkarımı yapar.",
         "- **PWA (Progressive Web App):** Uygulama kabuğunu Service Worker ile önbelleğe alır; ONNX modeli ve ORT çalışma zamanını yalnızca ilk tespitte indirerek sonraki açılışlarda çevrimdışı tespit sunar.",
-        f"- **Tauri 2 Masaüstü (`desktop/`, Windows EXE):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).",
-        f"- **Android APK (Tauri 2 WebView, `{desk['apk_mib']}` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = \"android\"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.",
+        f"- **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `{rel['exe_name']}`, `{exe_size_label}`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).",
+        f"- **Android APK (Tauri 2 WebView — `{rel['apk_name']}`, `{rel['apk_mib']}` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = \"android\"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.",
         "",
         "### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)",
         "",
@@ -173,20 +287,20 @@ def _build_everywhere_section() -> str:
         "",
         "| Senaryo / Kaynak | Motor | Model | Medyan Model Süresi | Canlı Video FPS | Notlar |",
         "|---|---|---|---:|---:|---|",
-        f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wgpu_fp32['backend']} | {wgpu_fp32['model']} ({wgpu_fp32['boyut_mb']} MB) | {wgpu_fp32['medyan_ms']} ms | — | Ort. IoU {wgpu_fp32['ort_iou']}, \\|Δconf\\| {wgpu_fp32['ort_dconf']} |",
-        f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wgpu_int8['backend']} | {wgpu_int8['model']} ({wgpu_int8['boyut_mb']} MB) | zaman aşımı | — | Kullanımdan çıkarıldı |",
+        f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wgpu_fp32['backend']} | {wgpu_fp32['model']} ({wgpu_fp32['boyut_mb']} MB) | {wgpu_fp32['medyan_ms']} ms | — | Birincil tarayıcı motoru (parite yukarıda `web_parity.csv` bölümünde) |",
+        f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wgpu_int8['backend']} | {wgpu_int8['model']} ({wgpu_int8['boyut_mb']} MB) | zaman aşımı | — | {int8_note} |",
         f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wasm_fp32['backend']} | {wasm_fp32['model']} ({wasm_fp32['boyut_mb']} MB) | {wasm_fp32['medyan_ms']} ms | — | WebGPU yokken yedek; tek iş parçacıklı WASM |",
-        f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wasm_int8['backend']} | {wasm_int8['model']} ({wasm_int8['boyut_mb']} MB) | {wasm_int8['medyan_ms']} ms | — | Eşleşme {wasm_int8['eşleşme_oranı']}; doğruluk kaybı nedeniyle elendi |",
+        f"| Tekil görüntü, 10 val (`web_spike.csv`) | {wasm_int8['backend']} | {wasm_int8['model']} ({wasm_int8['boyut_mb']} MB) | {wasm_int8['medyan_ms']} ms | — | {int8_note} |",
         f"| Canlı video 5.2 s, `val_pan.mp4` (`web_video_fps.csv`) | {vid_wgpu['ort_ep']} | FP32 ONNX | {vid_wgpu['model_ms']} ms | {vid_wgpu['avg_fps']} FPS ({vid_wgpu['frames']} kare) | Kuyruk yok (meşgulken kare atlanır) |",
         f"| Canlı video 5.2 s, `val_pan.mp4` (`web_video_fps.csv`) | {vid_wasm['ort_ep']} | FP32 ONNX | {vid_wasm['model_ms']} ms | {vid_wasm['avg_fps']} FPS ({vid_wasm['frames']} kare) | WASM üzerinde akıcı video beklenmez |",
         "",
         "### Masaüstü Uygulaması (Windows Tauri 2 EXE + FastAPI Sidecar)",
         "",
-        f"Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md` #65, **{cpu_hw}**):",
+        f"Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13 Kasım kaydı, **{cpu_hw}**):",
         "",
         "| Ölçüm | Değer | Not |",
         "|---|---|---|",
-        f"| NSIS kurulum dosyası | **{desk['nsis_mib']}** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |",
+        f"| NSIS kurulum dosyası (`{rel['exe_name']}`) | **{exe_size_label}** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |",
         f"| Diskteki kurulu boyut | **{desk['installed_gib']}** | Web arayüzü + Python FastAPI CPU sidecar + OpenVINO INT8 / PyTorch ağırlıkları |",
         f"| Pencere açılış süresi | **{desk['window_s']}** | Tauri WebView2 penceresi |",
         f"| Yerel motor hazır süresi | **{desk['sidecar_ready_s']}** (soğuk ilk açılış **{desk['sidecar_cold_s']}**) | Rastgele yerel port üzerinde OpenVINO INT8 + LayerCAM yüklemesi |",
@@ -195,9 +309,9 @@ def _build_everywhere_section() -> str:
         "",
         "### Android Ölçümü (`results/device_bench_phone.csv` — Tek Cihaz)",
         "",
-        "| Cihaz / Ortam | Motor & GPU Adaptör | Medyan Model | Medyan Toplam | Koşu Sayısı | Kaynak Notu |",
-        "|---|---|---:|---:|---:|---|",
-        f"| `{phone['cihaz']}` ({phone['os']}, {phone['webview']}) | `{phone['backend']}` (`{phone['gpu_adaptor']}`) | **{phone['medyan_model_ms']} ms** | **{phone['medyan_toplam_ms']} ms** | {phone['kosu_n']} (ısınma: {phone['isinma']}) | {phone['kaynak']} |",
+        "| Cihaz / Ortam | Motor & GPU Adaptör | Medyan Model | Medyan Toplam | Koşu Sayısı | APK Paketi | Kaynak Notu |",
+        "|---|---|---:|---:|---:|---|---|",
+        f"| `{phone['cihaz']}` ({phone['os']}, {phone['webview']}) | `{phone['backend']}` (`{phone['gpu_adaptor']}`) | **{phone['medyan_model_ms']} ms** | **{phone['medyan_toplam_ms']} ms** | {phone['kosu_n']} (ısınma: {phone['isinma']}) | `{rel['apk_name']}` (**{rel['apk_mib']}**) | {phone['kaynak']} |",
         "",
         f"> **Tek Cihaz Notu:** Yukarıdaki mobil ölçüm yalnızca tek bir üst segment Android cihazda (`{phone['cihaz']}`, WebGPU aktif) alınmıştır; farklı telefon modellerine—özellikle WebGPU desteği bulunmayan cihazlarda WASM yedek yoluna düşen telefonlara—genellenemez. Telefon kullanıcıları kendi cihaz hızlarını **Sonuçlar → Bu cihazda hız testi** düğmesiyle ölçebilir.",
         "",
@@ -222,7 +336,7 @@ def _build_everywhere_section() -> str:
         "",
         f"- **WASM canlı video performansı:** WebGPU desteği olmayan cihazlarda ORT WASM ile canlı video çıkarımı `< 1 FPS` düzeyindedir ({vid_wasm['avg_fps']} FPS @ {cpu_hw}); akıcı video akışı yerine tekil fotoğraf tespiti önerilir.",
         "- **Kamera modu deneyseldir:** Model PKU-Market-PCB veri setindeki yukarıdan çekilmiş yüksek çözünürlüklü kart fotoğraflarıyla eğitilmiştir; el kamerası perspektifi, parlamalar veya odak bozukluğunda doğruluk düşebilir.",
-        "- **LayerCAM ısı haritası tarayıcıda hesaplanmaz:** Katman 4 aktivasyon × pozitif gradyan geri yayılımı gerektirdiği için XAI açıklaması tarayıcı içinde üretilmez; masaüstünde **Yerel sunucu** (`api/`), ulaşılamazsa veya Android'de **Bulut** (`ebboo/tracera` Space `/explain_api`) ucuna yönlendirilir. Space gizliyken bulut açıklaması kullanılamaz.",
+        "- **LayerCAM ısı haritası tarayıcıda hesaplanmaz:** Katman 4 aktivasyon × pozitif gradyan geri yayılımı gerektirdiği için XAI açıklaması tarayıcı içinde üretilmez; masaüstünde **Yerel sunucu** (`api/`), ulaşılamazsa veya Android'de **Bulut** (`ebboo/tracera` Space `/explain_api`) ucuna yönlendirilir.",
         "",
         "---",
     ]
@@ -231,9 +345,22 @@ def _build_everywhere_section() -> str:
 
 def _check_forbidden(markdown: str, everywhere_section: str) -> None:
     lower_all = markdown.lower()
-    for term in ("mikron", "micron", "gerçek zamanlı", "gercek zamanli"):
+    for term in (
+        "mikron",
+        "micron",
+        "gerçek zamanlı",
+        "gercek zamanli",
+        "64.3 mib",
+        "space gizliyken bulut",
+        "eşleşme 0.7",
+        "kararlar.md` #65",
+        "kararlar.md #65",
+    ):
         if term in lower_all:
-            raise ValueError(f"Yasak ifade tespit edildi: {term!r}")
+            raise ValueError(f"Yasak veya guncel olmayan ifade tespit edildi: {term!r}")
+
+    if "linux'ta ~0.01 güven kayması gözlendi (ci raporu)" in lower_all:
+        raise ValueError("Eski Platform Paritesi Notu cumlesi kalmis")
 
     # Oracle P/R degerleri sadece Metodolojik Not (uyari) icinde gecmeli, baslik maddelerinde yer almamali
     headline_part = markdown.split("## 2.", 1)[0].split("> **Metodolojik Not:**", 1)[0]
@@ -245,8 +372,17 @@ def _check_forbidden(markdown: str, everywhere_section: str) -> None:
     if re.search(r"telefonda.*\bfps\b", everywhere_section.lower()):
         raise ValueError("Yeni bolumde 'telefonda ... FPS' genellemesi tespit edildi")
 
+    # Eski bolum 7-10 numaralari kalmamis olmali; yeni siralama 1..11 kesintisiz olmali
+    headings = re.findall(r"^## (\d+)\.", markdown, flags=re.MULTILINE)
+    if headings != [str(i) for i in range(1, 12)]:
+        raise ValueError(f"Bolum numaralandirmasi 1..11 degil: {headings}")
+
+    if "(Bölüm 8)" in markdown:
+        raise ValueError("Eski '(Bölüm 8)' atifi '(Bölüm 9)' olarak guncellenmemis")
+
 
 def build_final_readme_draft() -> str:
+    data = _collect_data()
     base_lines = README_PATH.read_text(encoding="utf-8").splitlines()
 
     top_links_block = [
@@ -260,10 +396,10 @@ def build_final_readme_draft() -> str:
 
     platform_note_block = [
         "",
-        "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux'ta ~0.01 güven kayması gözlendi (CI raporu).",
+        "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.",
     ]
 
-    everywhere_block = _build_everywhere_section()
+    everywhere_block = _build_everywhere_section(data)
 
     app_build_cmds = [
         "",
@@ -280,28 +416,39 @@ def build_final_readme_draft() -> str:
         "",
         "**Masaüstü Windows Kurulumu (Tauri 2 EXE, `desktop/`):**",
         "```bash",
-        "cd web && npm run build",
+        "conda activate tracera-build && python api/build_exe.py   # dist/tracera-api/ sidecar üretir",
+        "cd web && npm run build                                   # web/dist/ hazırlar",
         "cd ../desktop && npm ci",
-        "npx tauri build --config src-tauri/tauri.windows.conf.json   # dist/tracera-api/ sidecar hazır olmalı",
+        "npx tauri build --config src-tauri/tauri.windows.conf.json",
         "```",
         "",
         "**Android APK (Tauri 2 Android, `desktop/`):**",
+        "- Gereksinimler: Android Studio + SDK, Android NDK, `JAVA_HOME` / `ANDROID_HOME` / `NDK_HOME` ortam değişkenleri ve Windows Geliştirici Modu.",
         "```bash",
         "cd web && npm run build",
         "cd ../desktop",
-        "npx tauri android build",
+        "npx tauri android build --apk --target aarch64",
         "```",
     ]
 
+    two_way_pct_1dp = f"{float(data['parity_summary']['two_way_match_pct']):.1f}%"
+    n_parity_imgs = len(data["parity_images"])
+    phone_model_ms_int = round(float(data["phone"]["medyan_model_ms"]))
+    english_platform_bullet = (
+        f"- **Runs everywhere from one React/TypeScript codebase:** in-browser inference with "
+        f"ONNX Runtime Web (WebGPU, WASM fallback; {two_way_pct_1dp} two-way box match with PyTorch "
+        f"on {n_parity_imgs} val images), offline PWA, Windows desktop app (Tauri 2 + bundled "
+        f"FastAPI/OpenVINO engine, LayerCAM offline) and Android APK (on-device WebGPU, measured "
+        f"on one phone: {phone_model_ms_int} ms model median; heatmaps via cloud)."
+    )
+
     out_lines: list[str] = [
-        "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + KARARLAR.md kaynağından otomatik üretilmiştir. -->",
+        "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->",
         "",
     ]
 
     replaced_demo_line = False
     inserted_platform_note = False
-    inserted_everywhere = False
-    inserted_build_cmds = False
 
     for line in base_lines:
         if not replaced_demo_line and line.startswith("> 🌐 **Canlı Web Demosu"):
@@ -315,29 +462,42 @@ def build_final_readme_draft() -> str:
             out_lines.extend(platform_note_block)
             inserted_platform_note = True
 
-        if not inserted_everywhere and line.startswith("- Tüm doğruluk sayıları val setindendir"):
-            # Wait for the '---' separator right after Section 6 before inserting
-            pass
-
-        if not inserted_everywhere and inserted_platform_note and line.strip() == "---":
-            # Detect right before Section 7
-            pass
-
-    # Clean structural insertion on joined text without modifying a single preserved sentence
     draft = "\n".join(out_lines)
 
-    sec7_marker = "## 7. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)"
-    if sec7_marker not in draft:
-        raise ValueError(f"Beklenen baslik bulunamadi: {sec7_marker}")
-    draft = draft.replace(sec7_marker, f"{everywhere_block}\n\n{sec7_marker}", 1)
+    # Bolum 7-10'u 8-11'e kaydir (sondan basa dogru cakismanin onune gecmek icin)
+    heading_shifts = [
+        ("## 10. Veri Kaynakları ve Lisans", "## 11. Veri Kaynakları ve Lisans"),
+        ("## 9. Projeyi Çalıştırma", "## 10. Projeyi Çalıştırma"),
+        ("## 8. Sınırlılıklar ve Açık Noktalar", "## 9. Sınırlılıklar ve Açık Noktalar"),
+        ("## 7. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)", "## 8. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)"),
+    ]
+    for old_h, new_h in heading_shifts:
+        if old_h not in draft:
+            raise ValueError(f"Beklenen baslik bulunamadi: {old_h}")
+        draft = draft.replace(old_h, new_h, 1)
 
-    sec10_marker = "## 10. Veri Kaynakları ve Lisans"
-    if sec10_marker not in draft:
-        raise ValueError(f"Beklenen baslik bulunamadi: {sec10_marker}")
+    # Bolum atiflarini yeni numaralamaya gore guncelle (eski Bolum 8 -> Bolum 9)
+    if "(Bölüm 8)" not in draft:
+        raise ValueError("Beklenen '(Bölüm 8)' atifi bulunamadi")
+    draft = draft.replace("(Bölüm 8)", "(Bölüm 9)", 1)
+
+    sec8_marker = "## 8. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)"
+    draft = draft.replace(sec8_marker, f"{everywhere_block}\n\n{sec8_marker}", 1)
+
+    sec11_marker = "## 11. Veri Kaynakları ve Lisans"
     cmds_text = "\n".join(app_build_cmds)
     draft = draft.replace(
-        f"---\n\n{sec10_marker}",
-        f"{cmds_text}\n\n---\n\n{sec10_marker}",
+        f"---\n\n{sec11_marker}",
+        f"{cmds_text}\n\n---\n\n{sec11_marker}",
+        1,
+    )
+
+    english_transfer_line = "- **Transfer to PCB-AoI**"
+    if english_transfer_line not in draft:
+        raise ValueError(f"Beklenen English Summary satiri bulunamadi: {english_transfer_line}")
+    draft = draft.replace(
+        "\nCopyright (C)",
+        f"\n{english_platform_bullet}\n\nCopyright (C)",
         1,
     )
 

@@ -1,4 +1,4 @@
-<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + KARARLAR.md kaynağından otomatik üretilmiştir. -->
+<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->
 
 # Tracera: Açıklanabilir ve Edge Uyumlu PCB Hata Tespiti
 
@@ -27,7 +27,7 @@ Model seçiminde ve değerlendirmede aşırı iyimser tekil split yanılgısın�
 
 > **Metodolojik Not:** Test kartları (06 ve 10), 1024 kart bazlı CV'de en yüksek skoru alan Kat 5'in doğrulama kartları arasındaydı (0.9569 mAP50). Bu yüzden tek seferlik test skoru (0.9225) iyimser uçtadır; projenin ana iddiası **0.858 ± 0.152** CV ortalamasıdır. Ultralytics'in test için otomatik raporladığı P 0.9462 / R 0.8577, eşiği test setinin kendi F1 eğrisinden (0.569) seçtiği için bir üst sınırdır ("oracle eşik") ve başarı olarak raporlanmaz.
 
-> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux'ta ~0.01 güven kayması gözlendi (CI raporu).
+> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.
 
 ---
 
@@ -102,7 +102,7 @@ Hatanın kaynağını doğrulamak için model hatasız şablon kartları üzerin
 Kart 10 ve 11 şablonlarında hiç yanlış alarm yoktur (4 temiz şablonda toplam 3 alarm).
 
 - **mouse_bite noktası:** Hatasız Kart 06 şablonunda da 0.5569 güvenle alarm verdiği için kaynağı sentetik kusur değil, şablon fotoğrafının kendisidir. Görselde yolda bir daralma gibi görünür; bunun gerçek bir üretim kusuru mu yoksa tasarım detayı mı olduğu bilinmemektedir.
-- **spur noktası:** Konum sabittir, ancak temiz şablonda güven yalnızca 0.09'dur; kusurlu görüntülerde neden 0.40–0.46'ya çıktığı açıklanamamıştır (Bölüm 8).
+- **spur noktası:** Konum sabittir, ancak temiz şablonda güven yalnızca 0.09'dur; kusurlu görüntülerde neden 0.40–0.46'ya çıktığı açıklanamamıştır (Bölüm 9).
 
 **Duyarlılık satırı:** Bu 2 nokta çıkarıldığında test Precision'ı **0.9369**, F1 **0.9113** olur. Bu satır sonradan yapılmış bir analizdir; kilitli sonuç P 0.7455 / F1 0.8101'dir.
 
@@ -166,7 +166,7 @@ Tüm hız testleri **laptop ortamında** (AMD Ryzen 7 8845HS CPU ve NVIDIA GeFor
 
 ---
 
-## Her yerde çalışır: web, masaüstü, Android
+## 7. Her yerde çalışır: web, masaüstü, Android
 
 ### Mimari
 
@@ -182,8 +182,8 @@ flowchart LR
 
 - **Statik Web / Hugging Face Static Space (`web_space/`):** Sunucu GPU'su gerektirmeden doğrudan kullanıcı tarayıcısında ONNX Runtime Web (WebGPU öncelikli, yoksa tek iş parçacıklı WASM) ile `1024×1024` FP32 ONNX çıkarımı yapar.
 - **PWA (Progressive Web App):** Uygulama kabuğunu Service Worker ile önbelleğe alır; ONNX modeli ve ORT çalışma zamanını yalnızca ilk tespitte indirerek sonraki açılışlarda çevrimdışı tespit sunar.
-- **Tauri 2 Masaüstü (`desktop/`, Windows EXE):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).
-- **Android APK (Tauri 2 WebView, `64.3 MiB` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = "android"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.
+- **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `Tracera_1.0.0_x64-setup.exe`, `321.30 MiB`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).
+- **Android APK (Tauri 2 WebView — `Tracera_1.0.0_android_arm64.apk`, `58.29 MiB` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = "android"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.
 
 ### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)
 
@@ -201,20 +201,20 @@ Aşağıdaki süreler dizüstü bilgisayar donanımında (**NVIDIA GeForce RTX 4
 
 | Senaryo / Kaynak | Motor | Model | Medyan Model Süresi | Canlı Video FPS | Notlar |
 |---|---|---|---:|---:|---|
-| Tekil görüntü, 10 val (`web_spike.csv`) | ort-webgpu | FP32 ONNX (36.43 MB) | 36.05 ms | — | Ort. IoU 0.9908, \|Δconf\| 0.001589 |
-| Tekil görüntü, 10 val (`web_spike.csv`) | ort-webgpu | INT8 Dynamic ONNX (9.64 MB) | zaman aşımı | — | Kullanımdan çıkarıldı |
+| Tekil görüntü, 10 val (`web_spike.csv`) | ort-webgpu | FP32 ONNX (36.43 MB) | 36.05 ms | — | Birincil tarayıcı motoru (parite yukarıda `web_parity.csv` bölümünde) |
+| Tekil görüntü, 10 val (`web_spike.csv`) | ort-webgpu | INT8 Dynamic ONNX (9.64 MB) | zaman aşımı | — | INT8 dinamik ONNX elendi (WebGPU'da çalışmadı, WASM'da doğruluk düştü) |
 | Tekil görüntü, 10 val (`web_spike.csv`) | ort-wasm | FP32 ONNX (36.43 MB) | 689.41 ms | — | WebGPU yokken yedek; tek iş parçacıklı WASM |
-| Tekil görüntü, 10 val (`web_spike.csv`) | ort-wasm | INT8 Dynamic ONNX (9.64 MB) | 607.61 ms | — | Eşleşme 0.7; doğruluk kaybı nedeniyle elendi |
+| Tekil görüntü, 10 val (`web_spike.csv`) | ort-wasm | INT8 Dynamic ONNX (9.64 MB) | 607.61 ms | — | INT8 dinamik ONNX elendi (WebGPU'da çalışmadı, WASM'da doğruluk düştü) |
 | Canlı video 5.2 s, `val_pan.mp4` (`web_video_fps.csv`) | ort-webgpu | FP32 ONNX | 36 ms | 16.09 FPS (84 kare) | Kuyruk yok (meşgulken kare atlanır) |
 | Canlı video 5.2 s, `val_pan.mp4` (`web_video_fps.csv`) | ort-wasm | FP32 ONNX | 2241.8 ms | 0.38 FPS (2 kare) | WASM üzerinde akıcı video beklenmez |
 
 ### Masaüstü Uygulaması (Windows Tauri 2 EXE + FastAPI Sidecar)
 
-Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md` #65, **AMD Ryzen 7 8845HS w/ Radeon 780M Graphics**):
+Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13 Kasım kaydı, **AMD Ryzen 7 8845HS w/ Radeon 780M Graphics**):
 
 | Ölçüm | Değer | Not |
 |---|---|---|
-| NSIS kurulum dosyası | **321 MiB** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |
+| NSIS kurulum dosyası (`Tracera_1.0.0_x64-setup.exe`) | **321.30 MiB** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |
 | Diskteki kurulu boyut | **1.05 GiB** | Web arayüzü + Python FastAPI CPU sidecar + OpenVINO INT8 / PyTorch ağırlıkları |
 | Pencere açılış süresi | **0.8 s** | Tauri WebView2 penceresi |
 | Yerel motor hazır süresi | **~7.3 s** (soğuk ilk açılış **9.8 s**) | Rastgele yerel port üzerinde OpenVINO INT8 + LayerCAM yüklemesi |
@@ -223,9 +223,9 @@ Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md` #65, **AMD Ryz
 
 ### Android Ölçümü (`results/device_bench_phone.csv` — Tek Cihaz)
 
-| Cihaz / Ortam | Motor & GPU Adaptör | Medyan Model | Medyan Toplam | Koşu Sayısı | Kaynak Notu |
-|---|---|---:|---:|---:|---|
-| `SM-S948B` (Android 17, Chrome 157) | `ort-webgpu` (`qualcomm adreno-8xx`) | **134.15 ms** | **220.55 ms** | 20 (ısınma: 1) | uygulama içi hız testi, arayüz tablosu; ham JSON panodan alınamadı |
+| Cihaz / Ortam | Motor & GPU Adaptör | Medyan Model | Medyan Toplam | Koşu Sayısı | APK Paketi | Kaynak Notu |
+|---|---|---:|---:|---:|---|---|
+| `SM-S948B` (Android 17, Chrome 157) | `ort-webgpu` (`qualcomm adreno-8xx`) | **134.15 ms** | **220.55 ms** | 20 (ısınma: 1) | `Tracera_1.0.0_android_arm64.apk` (**58.29 MiB**) | uygulama içi hız testi, arayüz tablosu; ham JSON panodan alınamadı |
 
 > **Tek Cihaz Notu:** Yukarıdaki mobil ölçüm yalnızca tek bir üst segment Android cihazda (`SM-S948B`, WebGPU aktif) alınmıştır; farklı telefon modellerine—özellikle WebGPU desteği bulunmayan cihazlarda WASM yedek yoluna düşen telefonlara—genellenemez. Telefon kullanıcıları kendi cihaz hızlarını **Sonuçlar → Bu cihazda hız testi** düğmesiyle ölçebilir.
 
@@ -250,11 +250,11 @@ Tarayıcı (`FP32 ONNX`) ile yerel masaüstü yan sunucusu (`OpenVINO INT8`) sı
 
 - **WASM canlı video performansı:** WebGPU desteği olmayan cihazlarda ORT WASM ile canlı video çıkarımı `< 1 FPS` düzeyindedir (0.38 FPS @ AMD Ryzen 7 8845HS w/ Radeon 780M Graphics); akıcı video akışı yerine tekil fotoğraf tespiti önerilir.
 - **Kamera modu deneyseldir:** Model PKU-Market-PCB veri setindeki yukarıdan çekilmiş yüksek çözünürlüklü kart fotoğraflarıyla eğitilmiştir; el kamerası perspektifi, parlamalar veya odak bozukluğunda doğruluk düşebilir.
-- **LayerCAM ısı haritası tarayıcıda hesaplanmaz:** Katman 4 aktivasyon × pozitif gradyan geri yayılımı gerektirdiği için XAI açıklaması tarayıcı içinde üretilmez; masaüstünde **Yerel sunucu** (`api/`), ulaşılamazsa veya Android'de **Bulut** (`ebboo/tracera` Space `/explain_api`) ucuna yönlendirilir. Space gizliyken bulut açıklaması kullanılamaz.
+- **LayerCAM ısı haritası tarayıcıda hesaplanmaz:** Katman 4 aktivasyon × pozitif gradyan geri yayılımı gerektirdiği için XAI açıklaması tarayıcı içinde üretilmez; masaüstünde **Yerel sunucu** (`api/`), ulaşılamazsa veya Android'de **Bulut** (`ebboo/tracera` Space `/explain_api`) ucuna yönlendirilir.
 
 ---
 
-## 7. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)
+## 8. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)
 
 PCB-AoI, dizgili kartların gerçek SPI-AOI görüntülerinden oluşur (600×600, iki sınıf: Bad_qiaojiao — kalkık bacak, Bad_podu). **Sınıflar PKU ile ortak değildir**; bu yüzden deney aynı kusuru gerçek veriye taşımayı değil, PKU'da öğrenilen temsillerin başka bir PCB görevine başlangıç olarak yararını ölçer. Bölme zamansaldır (train 2016-10…2016-12, val 2017-01…2017-03, test 2017-03…2018-06); 2 birebir kopya görüntü atılmıştır. Protokol deneyden önce sabitlendi: 100 epoch, batch 16, imgsz 640, early stopping kapalı, 3 seed, last.pt, her model testte bir kez:
 
@@ -273,7 +273,7 @@ PCB-AoI, dizgili kartların gerçek SPI-AOI görüntülerinden oluşur (600×600
 
 ---
 
-## 8. Sınırlılıklar ve Açık Noktalar
+## 9. Sınırlılıklar ve Açık Noktalar
 
 1. **Çözünürlük Çapraz Doğrulaması Bilgisi:** Giriş çözünürlüğü CV deneyi (Tablo 2), rastgele bölmenin train+val görüntüleri (623 görüntü) üzerinde yürütüldüğü için test kartlarının (06 ve 10) train+val'deki görüntülerini de içermiştir; yani çözünürlük seçimi test kartlarından tam bağımsız değildir. Etkisi küçüktür: 1024, test kartı içermeyen Kat 1–4'ün hepsinde de 640'ı geçmiştir. Nihai model bu iki kartı hiç görmemiştir.
 2. **Kısıtlı Test Arka Planı:** PKU veri kümesinde bağımsız istatistiksel birim görüntü değil **kart tasarımıdır** (10 adet tasarım). Test kümesi fiilen yalnızca 2 kart tasarımından (06 ve 10) oluştuğu için sonuçlar tüm olası endüstriyel kart tasarımlarını temsil etmeyebilir.
@@ -283,7 +283,7 @@ PCB-AoI, dizgili kartların gerçek SPI-AOI görüntülerinden oluşur (600×600
 
 ---
 
-## 9. Projeyi Çalıştırma
+## 10. Projeyi Çalıştırma
 
 ### Ortam Kurulumu (Windows, Conda, NVIDIA GPU)
 ```bash
@@ -353,21 +353,23 @@ npm run build:space  # web/web_space/ HF Static Space paketi
 
 **Masaüstü Windows Kurulumu (Tauri 2 EXE, `desktop/`):**
 ```bash
-cd web && npm run build
+conda activate tracera-build && python api/build_exe.py   # dist/tracera-api/ sidecar üretir
+cd web && npm run build                                   # web/dist/ hazırlar
 cd ../desktop && npm ci
-npx tauri build --config src-tauri/tauri.windows.conf.json   # dist/tracera-api/ sidecar hazır olmalı
+npx tauri build --config src-tauri/tauri.windows.conf.json
 ```
 
 **Android APK (Tauri 2 Android, `desktop/`):**
+- Gereksinimler: Android Studio + SDK, Android NDK, `JAVA_HOME` / `ANDROID_HOME` / `NDK_HOME` ortam değişkenleri ve Windows Geliştirici Modu.
 ```bash
 cd web && npm run build
 cd ../desktop
-npx tauri android build
+npx tauri android build --apk --target aarch64
 ```
 
 ---
 
-## 10. Veri Kaynakları ve Lisans
+## 11. Veri Kaynakları ve Lisans
 
 - **PKU-Market-PCB:** W. Huang, P. Wei, "A PCB Dataset for Defects Detection and Classification", arXiv:1901.08204, 2019. Orijinal set döndürülmüş kopyalarla 1386 görüntüdür; bu projede yalnızca döndürülmemiş 693 görüntü kullanılmıştır (döndürülmüş kopyalar aynı görüntülerden türediği için sızıntı yaratır).
 - **PCB-AoI:** Kaggle `kubeedgeianvs/pcb-aoi` (KubeEdge Ianvs). Yalnızca `train_data` ve `test_data` kullanılmıştır.
@@ -385,5 +387,7 @@ npx tauri android build
 - **Explainability:** a deletion test (blur the map's top pixels vs. the same mask shifted elsewhere) shows LayerCAM at backbone layer 4 is faithful (relative score drop 0.70 vs 0.002 control, 97.3% win rate); classic Grad-CAM is weak (0.043 vs 0.013, 62%). Pointing game is reported but not used as primary evidence, since a randomly initialized network already scores 68%.
 - **Speed (laptop: Ryzen 7 8845HS / RTX 4060 Laptop, val set):** OpenVINO INT8 on CPU is ~2.8× faster than FP32 at 1024 (37.3 ms) and 3.7× smaller with no measurable mAP loss; TensorRT FP16 runs the model in 3.34 ms (81 FPS end-to-end). No embedded-device claims.
 - **Transfer to PCB-AoI** (real AOI images, different classes): PKU vs COCO initialization 0.617 ± 0.030 vs 0.608 ± 0.004 mAP50 over 3 seeds — no significant difference (null result).
+
+- **Runs everywhere from one React/TypeScript codebase:** in-browser inference with ONNX Runtime Web (WebGPU, WASM fallback; 96.7% two-way box match with PyTorch on 10 val images), offline PWA, Windows desktop app (Tauri 2 + bundled FastAPI/OpenVINO engine, LayerCAM offline) and Android APK (on-device WebGPU, measured on one phone: 134 ms model median; heatmaps via cloud).
 
 Copyright (C) 2026 Emin Burak Öztürk — GNU AGPL-3.0 (LICENSE)
