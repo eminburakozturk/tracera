@@ -62,6 +62,7 @@
     "totalTime": "Toplam",
     "selectHint": "Kutuya veya kartlara tıklayarak bir tespiti seçin.",
     "ortDisabledNotice": "Tarayıcı içi çıkarım (ONNX Runtime Web) henüz etkin değil; Adım 3 parite doğrulamasından sonra açılacaktır.",
+    "modelDownloadNotice": "İlk tespitte model indirilecek (~36 MB)",
     "apiOfflineError": "Yerel sunucu kapalı ({{url}}). Lütfen `uvicorn api.main:app --port 8765` komutuyla başlatın veya başka bir çıkarım motoru seçin."
   },
   "explain": {

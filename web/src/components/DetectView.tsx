@@ -6,6 +6,7 @@ import {
   FileJson,
   Flame,
   ImagePlus,
+  Info,
   Play,
   RotateCcw,
   Upload,
@@ -63,6 +64,7 @@ export function DetectView({
   const selectedDetectionId = useAppStore((s) => s.selectedDetectionId);
   const setSelectedDetectionId = useAppStore((s) => s.setSelectedDetectionId);
   const ortProgress = useAppStore((s) => s.ortProgress);
+  const ortModelCached = useAppStore((s) => s.ortModelCached);
 
   const [dragOver, setDragOver] = React.useState(false);
   const [hoveredId, setHoveredId] = React.useState<number | null>(null);
@@ -206,6 +208,19 @@ export function DetectView({
             </CardHeader>
 
             <CardContent className="space-y-4">
+              {backendChoice === "ort" &&
+                ortModelCached === false &&
+                ortProgress.stage === "idle" && (
+                  <div
+                    role="status"
+                    data-testid="model-download-notice"
+                    className="flex items-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-xs text-sky-900 dark:text-sky-200"
+                  >
+                    <Info className="h-4 w-4 shrink-0 text-[var(--accent)]" />
+                    <span>{t("detect.modelDownloadNotice")}</span>
+                  </div>
+                )}
+
               {ortProgress.stage !== "idle" &&
                 ortProgress.stage !== "ready" &&
                 backendChoice === "ort" && (

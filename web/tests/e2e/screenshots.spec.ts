@@ -11,7 +11,11 @@ test("Adım 1 — Capture desktop (1440px) and mobile (390px) screenshots", asyn
   });
   const desktopPage = await desktopCtx.newPage();
   await desktopPage.goto("/");
-  await desktopPage.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
+  await expect(desktopPage.getByTestId("run-detect-btn")).toBeEnabled({
+    timeout: 15_000,
+  });
+  await desktopPage.getByTestId("run-detect-btn").click();
+  await desktopPage.waitForSelector('[data-testid^="bbox-"]', { timeout: 30_000 });
   await desktopPage.waitForSelector('[data-testid="timing-badge"]', {
     timeout: 15_000,
   });
@@ -26,7 +30,11 @@ test("Adım 1 — Capture desktop (1440px) and mobile (390px) screenshots", asyn
   });
   const mobilePage = await mobileCtx.newPage();
   await mobilePage.goto("/");
-  await mobilePage.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
+  await expect(mobilePage.getByTestId("run-detect-btn")).toBeEnabled({
+    timeout: 15_000,
+  });
+  await mobilePage.getByTestId("run-detect-btn").click();
+  await mobilePage.waitForSelector('[data-testid^="bbox-"]', { timeout: 30_000 });
   await expect(mobilePage.getByTestId("mobile-tab-detect")).toBeVisible();
 
   const hasOverflow = await mobilePage.evaluate(() => {

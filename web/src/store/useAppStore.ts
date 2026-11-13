@@ -54,6 +54,7 @@ interface AppState {
   heatmapOpacity: number;
 
   ortProgress: OrtProgress;
+  ortModelCached: boolean | null;
 
   setActiveTab: (tab: AppTab) => void;
   setTheme: (theme: ThemeMode) => void;
@@ -79,6 +80,7 @@ interface AppState {
   setHeatmapOpacity: (opacity: number) => void;
 
   setOrtProgress: (progress: OrtProgress) => void;
+  setOrtModelCached: (cached: boolean | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -108,6 +110,7 @@ export const useAppStore = create<AppState>((set) => ({
   heatmapOpacity: 0.72,
 
   ortProgress: { stage: "idle", percent: 0, message: "" },
+  ortModelCached: null,
 
   setActiveTab: (activeTab) => set({ activeTab }),
   setTheme: (theme) => set({ theme }),
@@ -155,4 +158,5 @@ export const useAppStore = create<AppState>((set) => ({
   setHeatmapOpacity: (heatmapOpacity) => set({ heatmapOpacity }),
 
   setOrtProgress: (ortProgress) => set({ ortProgress }),
+  setOrtModelCached: (ortModelCached) => set({ ortModelCached }),
 }));

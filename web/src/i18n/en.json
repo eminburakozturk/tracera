@@ -62,6 +62,7 @@
     "totalTime": "Total",
     "selectHint": "Click any bounding box or detection card to select it.",
     "ortDisabledNotice": "In-browser inference (ONNX Runtime Web) is not active yet; it will be enabled after Step 3 parity verification.",
+    "modelDownloadNotice": "Model (~36 MB) will be downloaded on first detection",
     "apiOfflineError": "Local server is offline ({{url}}). Please start it with `uvicorn api.main:app --port 8765` or choose another backend."
   },
   "explain": {

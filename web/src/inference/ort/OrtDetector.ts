@@ -4,6 +4,20 @@ import type { Detector, OrtProgress } from "../types";
 
 export type OrtEpPreference = "auto" | "webgpu" | "wasm";
 
+export async function isOrtModelCached(
+  onnxFilename = FALLBACK_META.onnx,
+): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  try {
+    const matched = await caches.match(`/models/${onnxFilename}`, {
+      ignoreSearch: true,
+    });
+    return Boolean(matched && matched.ok);
+  } catch {
+    return false;
+  }
+}
+
 type WorkerOutMsg =
   | { type: "progress"; id: number; progress: OrtProgress }
   | { type: "result"; id: number; result: DetectResult }

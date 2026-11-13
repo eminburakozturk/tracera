@@ -16,7 +16,11 @@ import { CLOUD_UNAVAILABLE_MESSAGE } from "./inference/cloud/CloudClient";
 import { CloudDetector } from "./inference/cloud/CloudDetector";
 import { resolveExplain } from "./inference/explainResolver";
 import { MockDetector } from "./inference/mock/MockDetector";
-import { OrtDetector, type OrtEpPreference } from "./inference/ort/OrtDetector";
+import {
+  isOrtModelCached,
+  OrtDetector,
+  type OrtEpPreference,
+} from "./inference/ort/OrtDetector";
 import type { Detector } from "./inference/types";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
@@ -51,6 +55,7 @@ export function App() {
   const setExplainResult = useAppStore((s) => s.setExplainResult);
   const setExplainError = useAppStore((s) => s.setExplainError);
   const setOrtProgress = useAppStore((s) => s.setOrtProgress);
+  const setOrtModelCached = useAppStore((s) => s.setOrtModelCached);
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -110,6 +115,8 @@ export function App() {
         setDetectResult(result);
         if (backendChoice === "api") {
           setApiHealth({ status: "online" });
+        } else if (backendChoice === "ort") {
+          setOrtModelCached(true);
         }
       } catch (err) {
         if (reqId !== detectReqSeqRef.current) return;
@@ -134,6 +141,7 @@ export function App() {
       setDetectError,
       setDetectLoading,
       setDetectResult,
+      setOrtModelCached,
       setOrtProgress,
       t,
     ],
@@ -176,19 +184,32 @@ export function App() {
   );
 
   const handleSelectExample = React.useCallback(
-    async (ex: ValExampleItem) => {
+    async (ex: ValExampleItem, autoDetect = true) => {
       const resp = await fetch(ex.url);
       if (!resp.ok) {
         setDetectError(`Örnek görüntü yüklenemedi: ${ex.filename}`);
         return;
       }
+      if (typeof caches !== "undefined") {
+        try {
+          const cache = await caches.open("tracera-examples-v1");
+          await cache.put(ex.url, resp.clone());
+        } catch {
+          // Gizli sekme veya test ortamında önbellek hatasını yoksay
+        }
+      }
       const blob = await resp.blob();
       const file = new File([blob], ex.filename, {
         type: blob.type || "image/jpeg",
       });
-      await handleSelectFile(file);
+      if (autoDetect) {
+        await handleSelectFile(file);
+      } else {
+        const url = URL.createObjectURL(file);
+        setSelectedImage({ file, url, name: file.name });
+      }
     },
-    [handleSelectFile, setDetectError],
+    [handleSelectFile, setDetectError, setSelectedImage],
   );
 
   const handleRunDetect = React.useCallback(
@@ -268,15 +289,20 @@ export function App() {
       );
       setMetrics(loadedMetrics, source);
 
+      const cached = await isOrtModelCached(loadedMeta.onnx);
+      setOrtModelCached(cached);
+
       if (!useAppStore.getState().selectedImage && VAL_EXAMPLES.length > 0) {
         try {
-          await handleSelectExample(VAL_EXAMPLES[0]);
+          const shouldAutoDetect =
+            useAppStore.getState().backendChoice !== "ort" || cached;
+          await handleSelectExample(VAL_EXAMPLES[0], shouldAutoDetect);
         } catch {
           // ignore offline bootstrap failure in unit tests
         }
       }
     })();
-  }, [handleSelectExample, setConfThreshold, setMeta, setMetrics]);
+  }, [handleSelectExample, setConfThreshold, setMeta, setMetrics, setOrtModelCached]);
 
   // Suppress unused variable warnings on confThreshold/detectResult/selectedDetectionId if needed
   void confThreshold;

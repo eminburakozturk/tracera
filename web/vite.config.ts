@@ -56,12 +56,28 @@ function ortAssetsPlugin(): Plugin {
       const outDir = options.dir ? path.resolve(options.dir, "ort") : path.resolve(__dirname, "dist/ort");
       if (!fs.existsSync(ortDist)) return;
       fs.mkdirSync(outDir, { recursive: true });
+      const requiredOrtFiles = new Set([
+        "ort-wasm-simd-threaded.jsep.mjs",
+        "ort-wasm-simd-threaded.jsep.wasm",
+      ]);
       for (const fname of fs.readdirSync(ortDist)) {
-        if (
-          fname.startsWith("ort-wasm-") &&
-          (fname.endsWith(".wasm") || fname.endsWith(".mjs"))
-        ) {
+        if (requiredOrtFiles.has(fname)) {
           fs.copyFileSync(path.join(ortDist, fname), path.join(outDir, fname));
+        }
+      }
+
+      // Vite'ın assets/ içine kopyaladığı kullanılmayan kopya ort-wasm-* ve .map dosyalarını temizle
+      const assetsDir = options.dir
+        ? path.resolve(options.dir, "assets")
+        : path.resolve(__dirname, "dist/assets");
+      if (fs.existsSync(assetsDir)) {
+        for (const fname of fs.readdirSync(assetsDir)) {
+          if (
+            (fname.startsWith("ort-wasm-") && fname.endsWith(".wasm")) ||
+            fname.endsWith(".map")
+          ) {
+            fs.rmSync(path.join(assetsDir, fname), { force: true });
+          }
         }
       }
     },
@@ -113,17 +129,19 @@ export default defineConfig({
         ],
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 50 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         globPatterns: [
-          "**/*.{js,css,html,ico,png,svg,json,jpg}",
-          "models/tracera_1024.onnx",
+          "**/*.{js,css,html,ico,png,svg,webmanifest}",
+          "metrics.json",
           "models/meta.json",
-          "ort/ort-wasm-simd-threaded.wasm",
-          "ort/ort-wasm-simd-threaded.mjs",
-          "ort/ort-wasm-simd-threaded.jsep.wasm",
-          "ort/ort-wasm-simd-threaded.jsep.mjs",
         ],
-        globIgnores: ["**/tracera_1024_int8.onnx"],
+        globIgnores: [
+          "**/tracera_1024_int8.onnx",
+          "**/*.map",
+          "models/*.onnx",
+          "ort/**",
+          "examples/**",
+        ],
         navigateFallback: "index.html",
         runtimeCaching: [
           {
@@ -131,6 +149,7 @@ export default defineConfig({
             handler: "CacheFirst",
             options: {
               cacheName: "tracera-models-v1",
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 4,
                 maxAgeSeconds: 30 * 24 * 60 * 60,
@@ -142,8 +161,21 @@ export default defineConfig({
             handler: "CacheFirst",
             options: {
               cacheName: "tracera-ort-v1",
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
-                maxEntries: 12,
+                maxEntries: 8,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+            },
+          },
+          {
+            urlPattern: /\/examples\/.*\.(jpg|jpeg|png)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "tracera-examples-v1",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 16,
                 maxAgeSeconds: 30 * 24 * 60 * 60,
               },
             },

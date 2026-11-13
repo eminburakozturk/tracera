@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DetectView } from "../../src/components/DetectView";
 import { ExplainView } from "../../src/components/ExplainView";
 import { METRICS_FALLBACK } from "../../src/fixtures";
 import { ApiClientError } from "../../src/inference/api/ApiDetector";
@@ -190,5 +191,33 @@ describe("Cloud inference & ORT explain fallback", () => {
     render(<ExplainView onRunExplain={async () => {}} />);
     const badge = screen.getByTestId("explain-source-badge");
     expect(badge).toHaveTextContent("Bulut (ebboo/tracera)");
+  });
+
+  it("shows first-detect model download notice only when ORT model is uncached", () => {
+    useAppStore.setState({ backendChoice: "ort", ortModelCached: false });
+    const { rerender } = render(
+      <DetectView
+        onSelectExample={async () => {}}
+        onSelectFile={async () => {}}
+        onRunDetect={async () => {}}
+        onInspectDetection={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("model-download-notice")).toHaveTextContent(
+      "İlk tespitte model indirilecek (~36 MB)",
+    );
+
+    act(() => {
+      useAppStore.setState({ backendChoice: "ort", ortModelCached: true });
+    });
+    rerender(
+      <DetectView
+        onSelectExample={async () => {}}
+        onSelectFile={async () => {}}
+        onRunDetect={async () => {}}
+        onInspectDetection={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("model-download-notice")).not.toBeInTheDocument();
   });
 });

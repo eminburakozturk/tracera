@@ -101,6 +101,8 @@ test("Ek Adım 3 — OrtDetector two-way parity against PyTorch c025 refs (IoU>=
 
   await page.getByTestId("backend-select").click();
   await page.getByRole("option", { name: /Cihazda \(tarayıcı\)/i }).click();
+  await expect(page.getByTestId("run-detect-btn")).toBeEnabled({ timeout: 15_000 });
+  await page.getByTestId("run-detect-btn").click();
   await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 120_000 });
 
   const rows: string[] = [

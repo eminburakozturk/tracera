@@ -63,7 +63,7 @@ function startPlainStaticServer(rootDir: string): Promise<{
   });
 }
 
-test.describe("Adım 4 — PWA, Statik Paket ve WebGPU/WASM Doğrulama", () => {
+test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM Doğrulama", () => {
   let staticServer: http.Server;
   let staticBaseUrl = "";
 
@@ -87,8 +87,15 @@ test.describe("Adım 4 — PWA, Statik Paket ve WebGPU/WASM Doğrulama", () => {
     const isolated = await page.evaluate(() => window.crossOriginIsolated);
     expect(isolated).toBe(false);
 
+    await expect(page.getByTestId("model-download-notice")).toContainText(
+      "İlk tespitte model indirilecek (~36 MB)",
+    );
+    await expect(page.getByTestId("run-detect-btn")).toBeEnabled({ timeout: 15_000 });
+    await page.getByTestId("run-detect-btn").click();
+
     await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 45_000 });
     await expect(page.getByText("ort-webgpu")).toBeVisible();
+    await expect(page.getByTestId("model-download-notice")).not.toBeVisible();
 
     await page.getByTestId("example-val_05_short_01").click();
     await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 30_000 });
@@ -97,37 +104,57 @@ test.describe("Adım 4 — PWA, Statik Paket ve WebGPU/WASM Doğrulama", () => {
     await context.close();
   });
 
-  test("Static web_space falls back to single-thread WASM without SharedArrayBuffer", async ({
-    browser,
-  }) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    const page = await context.newPage();
-
-    await page.goto(`${staticBaseUrl}/?ep=wasm`);
-    const isolated = await page.evaluate(() => window.crossOriginIsolated);
-    expect(isolated).toBe(false);
-
-    await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 60_000 });
-    await expect(page.getByText("ort-wasm")).toBeVisible();
-
-    await context.close();
-  });
-
-  test("PWA precaches shell + 36MB model so offline reload skips download progress and detects", async ({
+  test("PWA strategy: (a) no ONNX download on open, (b) download & cache on first detect, (c) works offline after reload", async ({
     browser,
   }) => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
 
-    await page.goto(`${staticBaseUrl}/?ep=wasm`);
-    await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 60_000 });
+    const networkUrls: string[] = [];
+    page.on("request", (req) => networkUrls.push(req.url()));
 
-    // Service Worker'ın aktifleşip modeli ve WASM runtime'ını önbelleğe almasını bekle
+    await page.goto(`${staticBaseUrl}/?ep=wasm`);
+    expect(await page.evaluate(() => window.crossOriginIsolated)).toBe(false);
+
+    // SW kurulumunun tamamlanmasını bekle (yalnız uygulama kabuğu precache edilmeli)
     await page.waitForFunction(
       async () => {
         if (!("serviceWorker" in navigator)) return false;
         const reg = await navigator.serviceWorker.ready;
-        if (!reg.active) return false;
+        return Boolean(reg.active);
+      },
+      undefined,
+      { timeout: 30_000 },
+    );
+
+    // (a) İlk açılışta ONNX ve ORT WASM ağdan indirilmemiş olmalı; kullanıcı bilgilendirilmeli
+    await expect(page.getByTestId("model-download-notice")).toContainText(
+      "İlk tespitte model indirilecek (~36 MB)",
+    );
+    expect(networkUrls.some((u) => u.includes("tracera_1024.onnx"))).toBe(false);
+    expect(networkUrls.some((u) => u.includes(".wasm"))).toBe(false);
+
+    const cachedBeforeDetect = await page.evaluate(async () => ({
+      onnx: Boolean(await caches.match("/models/tracera_1024.onnx", { ignoreSearch: true })),
+      wasm: Boolean(await caches.match("/ort/ort-wasm-simd-threaded.jsep.wasm", { ignoreSearch: true })),
+    }));
+    expect(cachedBeforeDetect.onnx).toBe(false);
+    expect(cachedBeforeDetect.wasm).toBe(false);
+
+    // (b) İlk tespitte ONNX + ORT WASM indirilir ve runtime CacheFirst ile önbelleğe alınır
+    await expect(page.getByTestId("run-detect-btn")).toBeEnabled({ timeout: 15_000 });
+    await page.getByTestId("run-detect-btn").click();
+    await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 60_000 });
+    await expect(page.getByText("ort-wasm")).toBeVisible();
+    await expect(page.getByTestId("model-download-notice")).not.toBeVisible();
+
+    expect(networkUrls.some((u) => u.includes("tracera_1024.onnx"))).toBe(true);
+    expect(
+      networkUrls.some((u) => u.includes("/ort/ort-wasm-simd-threaded.jsep.wasm")),
+    ).toBe(true);
+
+    await page.waitForFunction(
+      async () => {
         const modelCached = await caches.match("/models/tracera_1024.onnx", {
           ignoreSearch: true,
         });
@@ -135,16 +162,19 @@ test.describe("Adım 4 — PWA, Statik Paket ve WebGPU/WASM Doğrulama", () => {
           "/ort/ort-wasm-simd-threaded.jsep.wasm",
           { ignoreSearch: true },
         );
-        return Boolean(modelCached && wasmCached);
+        const mjsCached = await caches.match(
+          "/ort/ort-wasm-simd-threaded.jsep.mjs",
+          { ignoreSearch: true },
+        );
+        return Boolean(modelCached && wasmCached && mjsCached);
       },
       undefined,
-      { timeout: 60_000 },
+      { timeout: 30_000 },
     );
 
-    // İlk yüklemeden sonra tarayıcıyı çevrimdışı moda al ve sayfayı yenile
+    // (c) Tarayıcıyı çevrimdışı yap, yenile: indirme bilgisi/çubuğu çıkmasın ve tespit çalışsın
     await context.setOffline(true);
 
-    let sawDownloadingMessage = false;
     await page.addInitScript(() => {
       const obs = new MutationObserver(() => {
         const el = document.querySelector('[data-testid="ort-progress"]');
@@ -163,17 +193,15 @@ test.describe("Adım 4 — PWA, Statik Paket ve WebGPU/WASM Doğrulama", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 60_000 });
     await expect(page.getByText("ort-wasm")).toBeVisible();
+    await expect(page.getByTestId("model-download-notice")).not.toBeVisible();
 
-    sawDownloadingMessage = await page.evaluate(
-      () =>
-        Boolean(
-          (window as unknown as { __sawDownloading?: boolean }).__sawDownloading,
-        ),
+    const sawDownloading = await page.evaluate(() =>
+      Boolean((window as unknown as { __sawDownloading?: boolean }).__sawDownloading),
     );
-    expect(sawDownloadingMessage).toBe(false);
+    expect(sawDownloading).toBe(false);
 
-    // İkinci örnek PCB üzerinde de çevrimdışı tespit çalışmalı
-    await page.getByTestId("example-val_05_short_01").click();
+    // Çevrimdışıyken kullanıcı düğmeyle de yeniden tespit çalıştırabilmeli
+    await page.getByTestId("run-detect-btn").click();
     await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 45_000 });
     await expect(page.getByText("ort-wasm")).toBeVisible();
 
@@ -186,15 +214,15 @@ test.describe("Adım 4 — PWA, Statik Paket ve WebGPU/WASM Doğrulama", () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
 
-    // Yerel sunucuyu ve HF Space isteklerini hızlı reddet (test süresi uzamasın)
     await page.route("**/*huggingface.co/**", (route) => route.abort("failed"));
     await page.route("**/*.hf.space/**", (route) => route.abort("failed"));
     await page.route("http://127.0.0.1:8765/**", (route) => route.abort("failed"));
 
     await page.goto(`${staticBaseUrl}/?ep=wasm`);
+    await expect(page.getByTestId("run-detect-btn")).toBeEnabled({ timeout: 15_000 });
+    await page.getByTestId("run-detect-btn").click();
     await page.waitForSelector('[data-testid="bbox-0"]', { timeout: 60_000 });
 
-    // ORT seçiliyken Açıkla -> yerel sunucu kapalı -> Bulut denensin -> hata mesajı gösterilsin, Mock'a düşmesin
     await page.getByTestId("explain-det-0").click();
     await expect(page.getByTestId("explain-error-banner")).toContainText(
       "Bulut açıklaması şu an kullanılamıyor",
