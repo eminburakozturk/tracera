@@ -67,18 +67,18 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: "127.0.0.1",
+    host: "localhost",
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Embedder-Policy": "credentialless",
     },
   },
   preview: {
     port: 5173,
-    host: "127.0.0.1",
+    host: "localhost",
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Embedder-Policy": "credentialless",
     },
   },
 });

@@ -70,12 +70,6 @@ export function App() {
     }
   }, [apiBaseUrl, setApiHealth]);
 
-  React.useEffect(() => {
-    if (backendChoice === "api") {
-      void recheckHealth();
-    }
-  }, [backendChoice, recheckHealth]);
-
   const createDetector = React.useCallback((): Detector => {
     if (backendChoice === "api") {
       return new ApiDetector(apiBaseUrl);
@@ -93,18 +87,23 @@ export function App() {
     return new ApiExplainer(apiBaseUrl);
   }, [apiBaseUrl, backendChoice]);
 
+  const detectReqSeqRef = React.useRef(0);
+
   const runDetectWithFile = React.useCallback(
     async (file: File, conf: number) => {
+      const reqId = ++detectReqSeqRef.current;
       setDetectLoading(true);
       setDetectError(null);
       try {
         const detector = createDetector();
         const result = await detector.detect(file, conf);
+        if (reqId !== detectReqSeqRef.current) return;
         setDetectResult(result);
         if (backendChoice === "api") {
           setApiHealth({ status: "online" });
         }
       } catch (err) {
+        if (reqId !== detectReqSeqRef.current) return;
         if (err instanceof ApiClientError && err.isOffline) {
           setApiHealth({ status: "offline", error: err.message });
           setDetectError(t("detect.apiOfflineError", { url: apiBaseUrl }));
@@ -112,8 +111,10 @@ export function App() {
           setDetectError(err instanceof Error ? err.message : String(err));
         }
       } finally {
-        setDetectLoading(false);
-        setOrtProgress({ stage: "idle", percent: 0, message: "" });
+        if (reqId === detectReqSeqRef.current) {
+          setDetectLoading(false);
+          setOrtProgress({ stage: "idle", percent: 0, message: "" });
+        }
       }
     },
     [
@@ -128,6 +129,32 @@ export function App() {
       t,
     ],
   );
+
+  const prevBackendRef = React.useRef(backendChoice);
+  React.useEffect(() => {
+    if (prevBackendRef.current !== backendChoice) {
+      prevBackendRef.current = backendChoice;
+      setDetectResult(null);
+      setExplainResult(null);
+      if (backendChoice === "api") {
+        void recheckHealth();
+      }
+      const img = useAppStore.getState().selectedImage;
+      if (img && (backendChoice !== "ort" || ORT_ENABLED)) {
+        void runDetectWithFile(img.file, useAppStore.getState().confThreshold);
+      }
+      return;
+    }
+    if (backendChoice === "api") {
+      void recheckHealth();
+    }
+  }, [
+    backendChoice,
+    recheckHealth,
+    runDetectWithFile,
+    setDetectResult,
+    setExplainResult,
+  ]);
 
   const handleSelectFile = React.useCallback(
     async (file: File) => {

@@ -133,6 +133,7 @@ export function DetectView({
         tabIndex={0}
         aria-label={`${det.cls} ${(det.conf * 100).toFixed(1)}%`}
         data-testid={`bbox-${det.id}`}
+        style={{ pointerEvents: "all" }}
         className="cursor-pointer focus:outline-none"
         onClick={(e) => {
           e.stopPropagation();
@@ -152,7 +153,7 @@ export function DetectView({
           y={y1}
           width={width}
           height={height}
-          fill={isSelected || isHovered ? `${color}33` : "transparent"}
+          fill={isSelected || isHovered ? `${color}33` : "rgba(0,0,0,0.001)"}
           stroke={color}
           strokeWidth={isSelected ? strokeW * 1.6 : strokeW}
         />
@@ -480,13 +481,13 @@ export function DetectView({
                       <img
                         src={selectedImage.url}
                         alt={selectedImage.name}
-                        className="block h-auto w-full"
+                        className="pointer-events-none block h-auto w-full"
                         draggable={false}
                       />
                       {detectResult && (
                         <svg
                           viewBox={`0 0 ${detectResult.width} ${detectResult.height}`}
-                          className="absolute inset-0 h-full w-full"
+                          className="pointer-events-none absolute inset-0 h-full w-full"
                           preserveAspectRatio="none"
                           data-testid="bbox-svg"
                         >
