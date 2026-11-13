@@ -17,7 +17,7 @@ jobs:
     name: Python Core & API Tests (3.11 CPU)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -35,13 +35,17 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          pytest -v -rs | tee /tmp/pytest_out.txt
+          set -o pipefail
+          status=0
+          pytest -v -rA | tee /tmp/pytest_out.txt || status=$?
           {
             echo "## Pytest Summary"
+            grep '\[platform-drift\]' /tmp/pytest_out.txt | sort -u || true
             echo '```'
-            tail -n 25 /tmp/pytest_out.txt
+            tail -n 45 /tmp/pytest_out.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   web:
     name: Web Lint, Vitest, Build & Mock E2E (Node 22)
@@ -50,9 +54,9 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -81,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
@@ -98,17 +102,22 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          python scripts/ci_linux_parity.py --out results/linux_parity.csv
+          python scripts/ci_linux_parity.py --out results/linux_parity.csv --summary-md results/linux_parity_summary.md
+          if [ -f results/linux_parity_summary.md ]; then
+            cat results/linux_parity_summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ -f results/linux_parity.csv ]; then
             {
-              echo "## Linux OpenVINO INT8 Parity (Informational)"
+              echo "### CSV Çıktısı"
+              echo '```csv'
               cat results/linux_parity.csv
+              echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload Linux parity CSV artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-parity-csv
           path: results/linux_parity.csv

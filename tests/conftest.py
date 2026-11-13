@@ -52,3 +52,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus: int, config: pytest.Co
             "-",
             f"[needs_weights] {_WEIGHTS_SKIPPED_COUNT} agirlik gerektiren test ATLANDI: {_WEIGHTS_STATUS_MSG}",
         )
+    for rep in terminalreporter.stats.get("passed", []):
+        for key, val in getattr(rep, "user_properties", []):
+            if key == "platform_drift":
+                terminalreporter.write_sep("-", str(val))

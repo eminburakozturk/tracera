@@ -4,21 +4,32 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
-from tracera_core.config import (  # noqa: E402
-    DEFAULT_IOU_NMS,
-    IMGSZ,
-    OPENVINO_MODEL_PATH,
-    ensure_weights_from_hf,
-)
+
+def _load_core_config():
+    """tracera_core/__init__.py uzerinden agir/fastapi bagimliliklarini tetiklemeden config.py yukler."""
+    cfg_path = REPO_ROOT / "tracera_core" / "config.py"
+    spec = importlib.util.spec_from_file_location("_tracera_core_config_only", cfg_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"tracera_core/config.py yuklenemedi: {cfg_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_CFG = _load_core_config()
+DEFAULT_CONF: float = _CFG.DEFAULT_CONF
+DEFAULT_IOU_NMS: float = _CFG.DEFAULT_IOU_NMS
+IMGSZ: int = _CFG.IMGSZ
+OPENVINO_MODEL_PATH: Path = _CFG.OPENVINO_MODEL_PATH
+ensure_weights_from_hf = _CFG.ensure_weights_from_hf
 
 SAMPLES_JSON = REPO_ROOT / "web_spike" / "samples.json"
 REF_DIR = REPO_ROOT / "web_spike" / "ref"
@@ -89,16 +100,52 @@ def write_csv(out_path: Path, rows: list[dict[str, Any]]) -> None:
         "ref_count_025",
         "linux_count_025",
         "count_diff",
+        "ref_count_0395",
+        "linux_count_0395",
+        "count_diff_0395",
         "matched",
         "only_linux",
         "only_ref",
         "mean_iou",
         "mean_abs_dconf",
+        "max_abs_dconf",
     ]
     with out_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_summary_md(
+    summary_path: Path | None,
+    *,
+    tested_images: int,
+    total_samples: int,
+    skipped_images: list[str],
+    mean_iou: float,
+    mean_dconf: float,
+    max_dconf: float,
+    tot_ref_0395: int,
+    tot_cur_0395: int,
+    status_note: str,
+) -> None:
+    if summary_path is None:
+        return
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    diff_0395 = tot_cur_0395 - tot_ref_0395
+    skip_note = ", ".join(skipped_images) if skipped_images else "yok"
+    lines = [
+        "## Linux OpenVINO INT8 Parity (Informational)",
+        "",
+        f"- **Durum:** `{status_note}`",
+        f"- **Görüntü sayısı:** {tested_images} / {total_samples} (atlanan: {skip_note})",
+        f"- **Ort. |Δconf| (0.25):** {mean_dconf:.6f}",
+        f"- **Maks. |Δconf| (0.25):** {max_dconf:.6f}",
+        f"- **Ort. IoU (0.25):** {mean_iou:.4f}",
+        f"- **Tespit sayısı farkı (0.395'te):** {tot_ref_0395} → {tot_cur_0395} ({diff_0395:+d})",
+        "",
+    ]
+    summary_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def main() -> int:
@@ -108,6 +155,12 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "results" / "linux_parity.csv",
         help="Cikti CSV yolu",
+    )
+    parser.add_argument(
+        "--summary-md",
+        type=Path,
+        default=None,
+        help="Opsiyonel Markdown ozet cikti yolu ($GITHUB_STEP_SUMMARY icin)",
     )
     args = parser.parse_args()
 
@@ -122,13 +175,29 @@ def main() -> int:
                     "ref_count_025": 0,
                     "linux_count_025": 0,
                     "count_diff": 0,
+                    "ref_count_0395": 0,
+                    "linux_count_0395": 0,
+                    "count_diff_0395": 0,
                     "matched": 0,
                     "only_linux": 0,
                     "only_ref": 0,
                     "mean_iou": "",
                     "mean_abs_dconf": "",
+                    "max_abs_dconf": "",
                 }
             ],
+        )
+        write_summary_md(
+            args.summary_md,
+            tested_images=0,
+            total_samples=0,
+            skipped_images=[],
+            mean_iou=0.0,
+            mean_dconf=0.0,
+            max_dconf=0.0,
+            tot_ref_0395=0,
+            tot_cur_0395=0,
+            status_note="skipped_no_weights",
         )
         return 0
 
@@ -140,8 +209,12 @@ def main() -> int:
     rows: list[dict[str, Any]] = []
     all_ious: list[float] = []
     all_dconfs: list[float] = []
+    skipped_images: list[str] = []
+    tested_images = 0
     tot_ref = 0
     tot_cur = 0
+    tot_ref_0395 = 0
+    tot_cur_0395 = 0
     tot_matched = 0
     tot_only_cur = 0
     tot_only_ref = 0
@@ -149,8 +222,10 @@ def main() -> int:
     for fname in samples:
         stem = Path(fname).stem
         ref_path = REF_DIR / f"{stem}__openvino-int8_c025.json"
+        ref_0395_path = REF_DIR / f"{stem}__openvino-int8.json"
         img_path = resolve_val_image(fname)
         if not ref_path.is_file() or img_path is None:
+            skipped_images.append(fname)
             rows.append(
                 {
                     "image": fname,
@@ -158,17 +233,27 @@ def main() -> int:
                     "ref_count_025": "",
                     "linux_count_025": "",
                     "count_diff": "",
+                    "ref_count_0395": "",
+                    "linux_count_0395": "",
+                    "count_diff_0395": "",
                     "matched": "",
                     "only_linux": "",
                     "only_ref": "",
                     "mean_iou": "",
                     "mean_abs_dconf": "",
+                    "max_abs_dconf": "",
                 }
             )
             continue
 
+        tested_images += 1
         ref_data = json.loads(ref_path.read_text(encoding="utf-8"))
         ref_dets = ref_data.get("detections", [])
+
+        if ref_0395_path.is_file():
+            ref_0395_dets = json.loads(ref_0395_path.read_text(encoding="utf-8")).get("detections", [])
+        else:
+            ref_0395_dets = [d for d in ref_dets if float(d["conf"]) >= DEFAULT_CONF]
 
         preds = ov.predict(
             source=str(img_path),
@@ -196,14 +281,19 @@ def main() -> int:
                     }
                 )
 
+        cur_0395_dets = [d for d in cur_dets if float(d["conf"]) >= DEFAULT_CONF]
+
         matches, only_cur, only_ref = match_detections(ref_dets, cur_dets)
         mean_iou = sum(m[0] for m in matches) / len(matches) if matches else 0.0
         mean_dconf = sum(m[1] for m in matches) / len(matches) if matches else 0.0
+        max_dconf = max((m[1] for m in matches), default=0.0)
 
         all_ious.extend(m[0] for m in matches)
         all_dconfs.extend(m[1] for m in matches)
         tot_ref += len(ref_dets)
         tot_cur += len(cur_dets)
+        tot_ref_0395 += len(ref_0395_dets)
+        tot_cur_0395 += len(cur_0395_dets)
         tot_matched += len(matches)
         tot_only_cur += only_cur
         tot_only_ref += only_ref
@@ -215,35 +305,59 @@ def main() -> int:
                 "ref_count_025": len(ref_dets),
                 "linux_count_025": len(cur_dets),
                 "count_diff": len(cur_dets) - len(ref_dets),
+                "ref_count_0395": len(ref_0395_dets),
+                "linux_count_0395": len(cur_0395_dets),
+                "count_diff_0395": len(cur_0395_dets) - len(ref_0395_dets),
                 "matched": len(matches),
                 "only_linux": only_cur,
                 "only_ref": only_ref,
                 "mean_iou": f"{mean_iou:.6f}",
                 "mean_abs_dconf": f"{mean_dconf:.6f}",
+                "max_abs_dconf": f"{max_dconf:.6f}",
             }
         )
 
     sum_iou = sum(all_ious) / len(all_ious) if all_ious else 0.0
     sum_dconf = sum(all_dconfs) / len(all_dconfs) if all_dconfs else 0.0
+    sum_max_dconf = max(all_dconfs, default=0.0)
+    summary_status = f"ok_{tested_images}_of_{len(samples)}" if tot_ref > 0 else "empty"
     rows.append(
         {
             "image": "SUMMARY",
-            "status": "ok" if tot_ref > 0 else "empty",
+            "status": summary_status,
             "ref_count_025": tot_ref,
             "linux_count_025": tot_cur,
             "count_diff": tot_cur - tot_ref,
+            "ref_count_0395": tot_ref_0395,
+            "linux_count_0395": tot_cur_0395,
+            "count_diff_0395": tot_cur_0395 - tot_ref_0395,
             "matched": tot_matched,
             "only_linux": tot_only_cur,
             "only_ref": tot_only_ref,
             "mean_iou": f"{sum_iou:.6f}",
             "mean_abs_dconf": f"{sum_dconf:.6f}",
+            "max_abs_dconf": f"{sum_max_dconf:.6f}",
         }
     )
 
     write_csv(args.out, rows)
+    write_summary_md(
+        args.summary_md,
+        tested_images=tested_images,
+        total_samples=len(samples),
+        skipped_images=skipped_images,
+        mean_iou=sum_iou,
+        mean_dconf=sum_dconf,
+        max_dconf=sum_max_dconf,
+        tot_ref_0395=tot_ref_0395,
+        tot_cur_0395=tot_cur_0395,
+        status_note=summary_status,
+    )
     print(
-        f"[linux-parity] ref={tot_ref} linux={tot_cur} diff={tot_cur - tot_ref:+d} "
-        f"matched={tot_matched} mean_iou={sum_iou:.4f} mean_|dconf|={sum_dconf:.6f} -> {args.out}"
+        f"[linux-parity] images={tested_images}/{len(samples)} "
+        f"ref_025={tot_ref} linux_025={tot_cur} diff_025={tot_cur - tot_ref:+d} "
+        f"diff_0395={tot_cur_0395 - tot_ref_0395:+d} matched={tot_matched} "
+        f"mean_iou={sum_iou:.4f} mean_|dconf|={sum_dconf:.6f} max_|dconf|={sum_max_dconf:.6f} -> {args.out}"
     )
     return 0
 
