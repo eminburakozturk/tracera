@@ -7,7 +7,7 @@ Tracera; PKU-Market-PCB veri seti üzerinde eğitilmiş YOLO11s (`1024×1024`) m
 | Dosya | Platform | Boyut | SHA-256 |
 |---|---|---:|---|
 | `Tracera_1.0.0_x64-setup.exe` | Windows (`x86_64`) | 321.30 MiB (336,910,025 bayt) | `95e5756b027e4115130c9323af664d78b07ed6950af86e8870ba3205d259213e` |
-| `Tracera_1.0.0_android_arm64.apk` | Android (`arm64-v8a`) | 64.30 MiB (67,428,443 bayt) | `e846f0df8686694e6c37484858a4ffff9dd70ebb9882e47aa039517406a82958` |
+| `Tracera_1.0.0_android_arm64.apk` | Android (`arm64-v8a`) | 58.29 MiB (61,122,491 bayt) | `4e8dd8cd3c6d089acdef7daf742a314a50956d20486a562fe92c502ee5d19765` |
 | `SHA256SUMS.txt` | Tümü | 194 bayt | — |
 
 - **Windows Masaüstü (`Tracera_1.0.0_x64-setup.exe`)**: Tauri 2 arayüzü + yerleşik CPU FastAPI yan sunucusu (`tracera-api`, OpenVINO INT8 tespit + Katman 4 LayerCAM ısı haritası) ve isteğe bağlı tarayıcı (`ort-webgpu` / `ort-wasm`) çıkarımı. Kurulum sonrası disk kullanımı yaklaşık `1.05 GiB`.
@@ -58,4 +58,4 @@ sha256sum -c SHA256SUMS.txt
 2. **WebGPU olmayan cihazlarda yavaştır**: WebGPU desteği sunmayan telefonlarda veya WebView sürümlerinde çıkarım tek iş parçacıklı `ort-wasm` yedeğine düşer (`web_spike.csv`: `689.41 ms`, `web_video_fps.csv`: `0.38 FPS`). Bu cihazlarda canlı kamera/video akışı yerine tekil fotoğraf tespiti önerilir.
 3. **Tek cihazda ölçülmüş mobil hız**: `results/device_bench_phone.csv` yalnızca bir cihazda (`SM-S948B`, Android 17, `ort-webgpu`) ölçülmüştür; farklı telefonlarda GPU/WebView desteğine bağlı olarak daha yavaş veya farklı sonuçlar görülebilir. Kullanıcılar **Sonuçlar → Bu cihazda hız testi** ile kendi cihazlarını yerel olarak ölçebilir.
 4. **Kamera modu deneyseldir**: Model PKU-Market-PCB veri setindeki yukarıdan çekilmiş kart görüntüleriyle eğitilmiştir; el kamerası perspektifi, yansıma veya odak bozukluğunda tespit doğruluğu düşebilir.
-5. **Paket imzaları ve APK boyutu**: Masaüstü EXE imzasız, Android APK debug imzalıdır. Mevcut `v1.0.0` web build'inde kullanılmayan `tracera_1024_int8.onnx` (~`9.64 MiB`) hâlâ yer aldığı için APK boyutuna dahildir.
+5. **Paket imzaları**: Masaüstü EXE imzasız, Android APK debug imzalıdır.
