@@ -92,7 +92,7 @@ function main() {
     "title: Tracera Web",
     "emoji: 🔬",
     "colorFrom: blue",
-    "colorTo: slate",
+    "colorTo: indigo",
     "sdk: static",
     "app_file: index.html",
     "pinned: false",

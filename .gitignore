@@ -19,11 +19,13 @@ __pycache__/
 # Gizli
 .env
 
-# Dağıtım paketleri
+# Dağıtım paketleri ve yerel yardımcı/ham kayıt dosyaları
 space/
 model_repo/
 dist/
 build/
 release/
 .pytest_cache/
+.claude/
+results/demo/*.webm
 

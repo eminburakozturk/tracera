@@ -43,3 +43,19 @@ type ExplainResult = { overlay_png: string; zoom_png: string; method: "layercam"
 - Sayılar elle yazılmaz: arayüzdeki tüm metrikler `/metrics` veya `web/public/metrics.json` (build sırasında csv'den üretilir).
 - Test görüntüleri (kart 06, 10) örnek olarak kullanılmaz; örnekler yalnız val kartları (05, 11).
 - Tarayıcı çıkarımı, Python çıktısıyla karşılaştırması geçmeden "doğru" sayılmaz (bkz. results/web_spike.csv).
+
+## 5. Masaüstü (Tauri) köprüsü — v1.1 (2026-11-13, Sohbet 1'in desktop/src-tauri/src/lib.rs uygulamasından sabitlendi)
+| Ad | Tür | Dönüş |
+|---|---|---|
+| `get_api_base_url` | komut (invoke) | `string` — ör. "http://127.0.0.1:53817" |
+| `get_api_port` | komut | `number` |
+| `get_sidecar_status` | komut | `{port, base_url, ready, startup_ms: number|null, error: string|null}` |
+| `tracera://api-ready` | olay (listen) | `{port, base_url, startup_ms}` |
+- Web tarafı: Tauri içinde çalıştığını algılarsa (`@tauri-apps/api/core` `isTauri()`), API taban URL'sini `get_api_base_url`'den alır; `ready=false` ise `tracera://api-ready` olayını bekler ve bu sürede "Yerel motor başlatılıyor…" gösterir. Tauri dışında mevcut davranış (http://127.0.0.1:8765 ayarı) aynen kalır.
+- Masaüstünde varsayılan motor: "Yerel sunucu" (OpenVINO INT8 + LayerCAM çevrimdışı). Tarayıcı içi (ORT) seçenek olarak kalır.
+
+## 6. v1.2 (2026-11-13) — Mobil (Android) için yerel motor yokluğu
+- `get_sidecar_status` dönüşüne `available: boolean` eklenir. Masaüstünde `true`; Android'de `false` (sidecar yok, Python çalışmaz) ve bu durumda `ready=false, error=null`.
+- Yeni komut `get_platform` → `"windows" | "android" | "other"`.
+- Web: `available=false` ise "Yerel motor başlatılıyor" ekranı GÖSTERİLMEZ; varsayılan motor "Cihazda (tarayıcı/ORT)"; "Yerel sunucu" seçeneği gizlenir; ısı haritası yalnız Bulut'tan (ebboo/tracera) denenir, erişilemezse mevcut "Bulut açıklaması şu an kullanılamıyor" mesajı.
+- Android'de ONNX modeli ve ORT dosyaları APK içinde paketlenir (çevrimdışı tespit); ağ yalnız bulut açıklaması için.

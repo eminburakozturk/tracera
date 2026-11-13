@@ -55,3 +55,5 @@ Not: (PLAN.md'deki ilgili satır)
 - Her oturuma başlarken `PLAN.md` ve `KARARLAR.md` okunur.
 - Rakamlar sadece gerçek çıktılardan yazılır. Uydurma metrik, uydurma kaynak yok.
 - Push'u kullanıcı yapar. Ajan sadece commit atar (küçük, açıklayıcı mesajlarla).
+
+- Shell commands: use the Bash tool, not PowerShell (RTK compresses Bash output).
