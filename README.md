@@ -212,12 +212,12 @@ Aşağıdaki süreler dizüstü bilgisayar donanımında (**NVIDIA GeForce RTX 4
 
 ### Masaüstü Uygulaması (Windows Tauri 2 EXE + FastAPI Sidecar)
 
-Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13 Kasım kaydı, **AMD Ryzen 7 8845HS w/ Radeon 780M Graphics**):
+Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13–14 Kasım kayıtları, **AMD Ryzen 7 8845HS w/ Radeon 780M Graphics**):
 
 | Ölçüm | Değer | Not |
 |---|---|---|
 | NSIS kurulum dosyası (`Tracera_1.0.0_x64-setup.exe`) | **315.03 MiB** | İmzasız derleme (ilk açılışta Windows SmartScreen uyarısı gösterebilir) |
-| Diskteki kurulu boyut | **1.05 GiB** | Web arayüzü + Python FastAPI CPU sidecar + OpenVINO INT8 / PyTorch ağırlıkları |
+| Diskteki kurulu boyut | **1.02 GiB** | Web arayüzü + Python FastAPI CPU sidecar + OpenVINO INT8 / PyTorch ağırlıkları |
 | Pencere açılış süresi | **0.8 s** | Tauri WebView2 penceresi |
 | Yerel motor hazır süresi | **~7.3 s** (soğuk ilk açılış **9.8 s**) | Rastgele yerel port üzerinde OpenVINO INT8 + LayerCAM yüklemesi |
 | Tekil tespit (`/detect`) | **63 ms** | OpenVINO INT8 CPU çıkarımı |

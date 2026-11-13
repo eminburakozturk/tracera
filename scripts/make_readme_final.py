@@ -59,7 +59,7 @@ def _measure_precache_mb() -> str:
 
 
 def _extract_desktop_metrics() -> dict[str, str]:
-    """KARARLAR.md 13 Kasim kaydindaki olculmus masaustu metriklerini cikarir."""
+    """KARARLAR.md (ve varsa RELEASE_NOTES) icindeki olculmus masaustu metriklerini cikarir."""
     text = KARARLAR_PATH.read_text(encoding="utf-8")
     m65 = re.search(
         r"NSIS kurulum (\d+(?:\.\d+)? MiB), kurulu (\d+(?:\.\d+)? GiB), "
@@ -70,9 +70,20 @@ def _extract_desktop_metrics() -> dict[str, str]:
     )
     if not m65:
         raise ValueError("KARARLAR.md 13 Kasim masaustu metrikleri bulunamadi")
+
+    installed_gib = m65.group(2)
+    latest_installed = re.findall(r"son derlemede\s+(\d+(?:\.\d+)? GiB)", text)
+    if latest_installed:
+        installed_gib = latest_installed[-1]
+    elif RELEASE_NOTES_PATH.is_file():
+        rn_text = RELEASE_NOTES_PATH.read_text(encoding="utf-8")
+        m_rn = re.search(r"kurulum sonrası disk kullanımı yaklaşık\s+`(\d+(?:\.\d+)? GiB)`", rn_text)
+        if m_rn:
+            installed_gib = m_rn.group(1)
+
     return {
         "nsis_mib": m65.group(1),
-        "installed_gib": m65.group(2),
+        "installed_gib": installed_gib,
         "window_s": m65.group(3),
         "sidecar_ready_s": m65.group(4),
         "sidecar_cold_s": m65.group(5),
@@ -296,7 +307,7 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
         "",
         "### Masaüstü Uygulaması (Windows Tauri 2 EXE + FastAPI Sidecar)",
         "",
-        f"Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13 Kasım kaydı, **{cpu_hw}**):",
+        f"Windows kurulum ve ilk çalıştırma ölçümleri (`KARARLAR.md`, 13–14 Kasım kayıtları, **{cpu_hw}**):",
         "",
         "| Ölçüm | Değer | Not |",
         "|---|---|---|",
