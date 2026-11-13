@@ -24,5 +24,6 @@ space/
 model_repo/
 dist/
 build/
+release/
 .pytest_cache/
 

@@ -1,0 +1,2 @@
+cihaz,os,backend,gpu_adaptor,webview,medyan_model_ms,medyan_toplam_ms,kosu_n,isinma,kaynak
+SM-S948B,Android 17,ort-webgpu,qualcomm adreno-8xx,Chrome 157,134.15,220.55,20,1,"uygulama içi hız testi, arayüz tablosu; ham JSON panodan alınamadı"
