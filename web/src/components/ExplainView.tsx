@@ -7,7 +7,6 @@ import { Button } from "./ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "./ui/card";
@@ -72,9 +71,6 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <CardTitle>{t("explain.title")}</CardTitle>
-              <CardDescription>
-                {t(localApiAvailable ? "explain.apiRequiredNote" : "explain.cloudOnlyNote")}
-              </CardDescription>
             </div>
             {explainResult && (
               <div className="flex flex-wrap items-center gap-2">
@@ -92,8 +88,12 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {backendChoice === "ort" && (
-            <div className="flex items-start gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3 text-xs text-[var(--text-primary)]">
+          {(backendChoice === "ort" ||
+            (!localApiAvailable && backendChoice !== "mock")) && (
+            <div
+              data-testid="explain-cloud-note"
+              className="flex items-start gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3 text-xs text-[var(--text-primary)]"
+            >
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" />
               <span>
                 {t(localApiAvailable ? "explain.apiRequiredNote" : "explain.cloudOnlyNote")}

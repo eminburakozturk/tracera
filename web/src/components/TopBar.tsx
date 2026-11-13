@@ -78,7 +78,10 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--border-hairline)] bg-[var(--bg-surface)]/92 backdrop-blur-md">
+    <header
+      data-testid="top-bar"
+      className="safe-area-top sticky top-0 z-40 border-b border-[var(--border-hairline)] bg-[var(--bg-surface)]/92 backdrop-blur-md"
+    >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]">

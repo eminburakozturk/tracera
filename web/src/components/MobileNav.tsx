@@ -18,8 +18,9 @@ export function MobileNav() {
 
   return (
     <nav
+      data-testid="mobile-nav"
       aria-label="Mobil alt gezinme"
-      className="sticky bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-hairline)] bg-[var(--bg-surface)]/95 backdrop-blur-md sm:hidden"
+      className="safe-area-bottom sticky bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-hairline)] bg-[var(--bg-surface)]/95 backdrop-blur-md sm:hidden"
     >
       {NAV_ITEMS.map(({ id, icon: Icon, key }) => {
         const active = activeTab === id;

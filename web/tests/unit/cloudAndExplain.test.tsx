@@ -193,6 +193,20 @@ describe("Cloud inference & ORT explain fallback", () => {
     expect(badge).toHaveTextContent("Bulut (ebboo/tracera)");
   });
 
+  it("renders cloud-only note once and uses selected detection copy in ExplainView", () => {
+    act(() => {
+      useAppStore.setState({ localApiAvailable: false, backendChoice: "ort" });
+    });
+    render(<ExplainView onRunExplain={async () => {}} />);
+    const notes = screen.getAllByText(
+      "Bu cihazda ısı haritası bulutta hesaplanır (internet gerekir).",
+    );
+    expect(notes).toHaveLength(1);
+    expect(screen.getByTestId("explain-cloud-note")).toBeInTheDocument();
+    expect(screen.queryByText(/anchor/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/seçilen tespitin/i)).toBeInTheDocument();
+  });
+
   it("shows first-detect model download notice only when ORT model is uncached", () => {
     useAppStore.setState({ backendChoice: "ort", ortModelCached: false });
     const { rerender } = render(

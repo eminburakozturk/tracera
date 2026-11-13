@@ -1,3 +1,4 @@
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 // 1x1 transparent PNG base64
@@ -111,5 +112,102 @@ test.describe("CI Mock & Route E2E (WebGPU / Python API bağımsız)", () => {
 
     await expect(page.getByTestId("explain-overlay-img")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("explain-source-badge")).toContainText(/FastAPI/i);
+  });
+
+  test("Mobil 390px: safe-area-inset simülasyonu, tek bulut notu ve ekran görüntüsü", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+    });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).isTauri = true;
+      (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
+        invoke: async (cmd: string) => {
+          if (cmd === "get_platform") return "android";
+          if (cmd === "get_sidecar_status") {
+            return {
+              port: 0,
+              base_url: "",
+              ready: false,
+              startup_ms: null,
+              error: null,
+              available: false,
+            };
+          }
+          if (cmd === "get_api_base_url") return "";
+          return null;
+        },
+        transformCallback: () => 0,
+      };
+    });
+    await page.goto("/");
+
+    const viewportContent = await page
+      .locator('meta[name="viewport"]')
+      .getAttribute("content");
+    expect(viewportContent).toContain("viewport-fit=cover");
+
+    // Masaüstü/headless WebView varsayılan env() değeri (0px beklenir)
+    const defaultTopPadding = await page
+      .getByTestId("top-bar")
+      .evaluate((el) => getComputedStyle(el).paddingTop);
+    expect(defaultTopPadding).toBe("0px");
+
+    // Android durum çubuğu & alt çubuk için CSS env override simülasyonu
+    await page.addStyleTag({
+      content: `
+        :root {
+          --safe-area-inset-top: 40px;
+          --safe-area-inset-bottom: 24px;
+        }
+      `,
+    });
+
+    const topBar = page.getByTestId("top-bar");
+    const mobileNav = page.getByTestId("mobile-nav");
+    await expect(topBar).toBeVisible();
+    await expect(mobileNav).toBeVisible();
+
+    const simulatedTopPadding = await topBar.evaluate(
+      (el) => getComputedStyle(el).paddingTop,
+    );
+    const simulatedBottomPadding = await mobileNav.evaluate(
+      (el) => getComputedStyle(el).paddingBottom,
+    );
+    expect(simulatedTopPadding).toBe("40px");
+    expect(simulatedBottomPadding).toBe("24px");
+
+    // "Tracera" başlığı 40px durum çubuğu güvenli alanının altında kalmalı
+    const titleBox = await topBar.getByText("Tracera", { exact: true }).boundingBox();
+    expect(titleBox).not.toBeNull();
+    expect(titleBox!.y).toBeGreaterThanOrEqual(40);
+
+    // Alt sekme çubuğu butonları 24px alt güvenli alanın üstünde kalmalı
+    const explainTabBtn = page.getByTestId("mobile-tab-explain");
+    const explainBtnBox = await explainTabBtn.boundingBox();
+    expect(explainBtnBox).not.toBeNull();
+    expect(explainBtnBox!.y + explainBtnBox!.height).toBeLessThanOrEqual(844 - 24 + 1);
+
+    // Açıkla sekmesinde sadeleştirilmiş tek bulut notu ve "seçilen tespitin"
+    await explainTabBtn.click();
+    const cloudNotes = page.getByText(
+      "Bu cihazda ısı haritası bulutta hesaplanır (internet gerekir).",
+    );
+    await expect(cloudNotes).toHaveCount(1);
+    await expect(page.getByText(/seçilen tespitin/i)).toBeVisible();
+    await expect(page.getByText(/anchor/i)).toHaveCount(0);
+
+    const hasOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 2,
+    );
+    expect(hasOverflow).toBe(false);
+
+    await page.screenshot({
+      path: path.resolve(process.cwd(), "../results/ui_mobile_safe_area.png"),
+      fullPage: false,
+    });
+    await context.close();
   });
 });
