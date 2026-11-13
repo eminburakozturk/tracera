@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { FALLBACK_META } from "../lib/meta";
 import { DEFAULT_API_BASE_URL } from "../inference/api/ApiDetector";
-import type { BackendChoice, OrtProgress } from "../inference/types";
+import { DEFAULT_CLOUD_SPACE } from "../inference/cloud/CloudClient";
+import type { BackendChoice, ExplainSource, OrtProgress } from "../inference/types";
 import type {
   DetectResult,
   ExplainResult,
@@ -33,6 +34,7 @@ interface AppState {
   backendChoice: BackendChoice;
   apiBaseUrl: string;
   apiHealth: ApiHealthState;
+  cloudSpaceId: string;
   meta: ModelMeta;
   metrics: MetricsPayload | null;
   metricsSource: "api" | "static" | "fallback" | null;
@@ -46,6 +48,7 @@ interface AppState {
   selectedDetectionId: number | null;
 
   explainResult: ExplainResult | null;
+  explainSource: ExplainSource | null;
   explainLoading: boolean;
   explainError: string | null;
   heatmapOpacity: number;
@@ -58,6 +61,7 @@ interface AppState {
   setBackendChoice: (backend: BackendChoice) => void;
   setApiBaseUrl: (url: string) => void;
   setApiHealth: (health: ApiHealthState) => void;
+  setCloudSpaceId: (spaceId: string) => void;
   setMeta: (meta: ModelMeta) => void;
   setMetrics: (metrics: MetricsPayload, source: "api" | "static" | "fallback") => void;
 
@@ -70,7 +74,7 @@ interface AppState {
   setSelectedDetectionId: (id: number | null) => void;
 
   setExplainLoading: (loading: boolean) => void;
-  setExplainResult: (res: ExplainResult | null) => void;
+  setExplainResult: (res: ExplainResult | null, source?: ExplainSource | null) => void;
   setExplainError: (err: string | null) => void;
   setHeatmapOpacity: (opacity: number) => void;
 
@@ -84,6 +88,7 @@ export const useAppStore = create<AppState>((set) => ({
   backendChoice: "ort",
   apiBaseUrl: DEFAULT_API_BASE_URL,
   apiHealth: { status: "unknown" },
+  cloudSpaceId: DEFAULT_CLOUD_SPACE,
   meta: FALLBACK_META,
   metrics: null,
   metricsSource: null,
@@ -97,6 +102,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedDetectionId: null,
 
   explainResult: null,
+  explainSource: null,
   explainLoading: false,
   explainError: null,
   heatmapOpacity: 0.72,
@@ -109,6 +115,7 @@ export const useAppStore = create<AppState>((set) => ({
   setBackendChoice: (backendChoice) => set({ backendChoice, detectError: null }),
   setApiBaseUrl: (apiBaseUrl) => set({ apiBaseUrl }),
   setApiHealth: (apiHealth) => set({ apiHealth }),
+  setCloudSpaceId: (cloudSpaceId) => set({ cloudSpaceId }),
   setMeta: (meta) => set({ meta }),
   setMetrics: (metrics, metricsSource) => set({ metrics, metricsSource }),
 
@@ -123,6 +130,7 @@ export const useAppStore = create<AppState>((set) => ({
         detectError: null,
         selectedDetectionId: null,
         explainResult: null,
+        explainSource: null,
         explainError: null,
       };
     }),
@@ -138,10 +146,11 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   setDetectError: (detectError) => set({ detectError }),
   setSelectedDetectionId: (selectedDetectionId) =>
-    set({ selectedDetectionId, explainResult: null, explainError: null }),
+    set({ selectedDetectionId, explainResult: null, explainSource: null, explainError: null }),
 
   setExplainLoading: (explainLoading) => set({ explainLoading }),
-  setExplainResult: (explainResult) => set({ explainResult, explainError: null }),
+  setExplainResult: (explainResult, explainSource = null) =>
+    set({ explainResult, explainSource, explainError: null }),
   setExplainError: (explainError) => set({ explainError }),
   setHeatmapOpacity: (heatmapOpacity) => set({ heatmapOpacity }),
 

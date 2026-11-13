@@ -3,4 +3,5 @@ dist/
 playwright-report/
 test-results/
 public/ort/
+web_space/
 *.tsbuildinfo

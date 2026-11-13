@@ -5,6 +5,8 @@ import { computeLetterbox, postprocessYolo } from "./postprocess";
 
 ort.env.wasm.wasmPaths = "/ort/";
 
+type EpPreference = "auto" | "webgpu" | "wasm";
+
 interface DetectRequestMsg {
   type: "detect";
   id: number;
@@ -12,6 +14,7 @@ interface DetectRequestMsg {
   mimeType: string;
   conf: number;
   meta: ModelMeta;
+  epPref?: EpPreference;
 }
 
 type WorkerOutMsg =
@@ -19,7 +22,8 @@ type WorkerOutMsg =
   | { type: "result"; id: number; result: DetectResult }
   | { type: "error"; id: number; message: string };
 
-let cachedModelUrl: string | null = null;
+const MODEL_CACHE_NAME = "tracera-models-v1";
+let cachedSessionKey: string | null = null;
 let cachedSession: ort.InferenceSession | null = null;
 let cachedBackend: "ort-webgpu" | "ort-wasm" = "ort-wasm";
 let offscreenCanvas: OffscreenCanvas | null = null;
@@ -41,10 +45,47 @@ async function hasWebGPU(): Promise<boolean> {
   }
 }
 
+async function tryReadCachedModel(modelUrl: string): Promise<Uint8Array | null> {
+  if (typeof caches === "undefined") return null;
+  try {
+    const matched = await caches.match(modelUrl, { ignoreSearch: true });
+    if (!matched || !matched.ok) return null;
+    return new Uint8Array(await matched.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+async function tryWriteCachedModel(modelUrl: string, bytes: Uint8Array): Promise<void> {
+  if (typeof caches === "undefined") return;
+  try {
+    const cache = await caches.open(MODEL_CACHE_NAME);
+    const body = new Uint8Array(bytes).buffer;
+    await cache.put(
+      modelUrl,
+      new Response(body, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(bytes.byteLength),
+        },
+      }),
+    );
+  } catch {
+    // Gizli sekme veya kota sınırında önbellek yazma hatasını yoksay
+  }
+}
+
 async function fetchModelBytesWithProgress(
   modelUrl: string,
   reqId: number,
 ): Promise<Uint8Array> {
+  const cachedBytes = await tryReadCachedModel(modelUrl);
+  if (cachedBytes) {
+    // Model önbellekteyse indirme ilerleme çubuğu gösterme (stage: "downloading" atlanır)
+    return cachedBytes;
+  }
+
   postOut({
     type: "progress",
     id: reqId,
@@ -65,6 +106,7 @@ async function fetchModelBytesWithProgress(
 
   if (!resp.body) {
     const buf = new Uint8Array(await resp.arrayBuffer());
+    await tryWriteCachedModel(modelUrl, buf);
     postOut({
       type: "progress",
       id: reqId,
@@ -108,23 +150,33 @@ async function fetchModelBytesWithProgress(
     combined.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  await tryWriteCachedModel(modelUrl, combined);
   return combined;
 }
 
 async function ensureSession(
   meta: ModelMeta,
   reqId: number,
+  epPref: EpPreference = "auto",
 ): Promise<{ session: ort.InferenceSession; backend: "ort-webgpu" | "ort-wasm" }> {
   const modelUrl = `/models/${meta.onnx}`;
-  if (cachedSession && cachedModelUrl === modelUrl) {
+  const sessionKey = `${modelUrl}::${epPref}`;
+  if (cachedSession && cachedSessionKey === sessionKey) {
     return { session: cachedSession, backend: cachedBackend };
   }
 
   const modelBytes = await fetchModelBytesWithProgress(modelUrl, reqId);
-  const gpuAvailable = await hasWebGPU();
-  const tryOrder: Array<"webgpu" | "wasm"> = gpuAvailable
-    ? ["webgpu", "wasm"]
-    : ["wasm"];
+  const gpuAvailable = epPref === "wasm" ? false : await hasWebGPU();
+  const tryOrder: Array<"webgpu" | "wasm"> =
+    epPref === "wasm"
+      ? ["wasm"]
+      : epPref === "webgpu"
+        ? gpuAvailable
+          ? ["webgpu"]
+          : ["webgpu", "wasm"]
+        : gpuAvailable
+          ? ["webgpu", "wasm"]
+          : ["wasm"];
 
   let lastErr: unknown = null;
   for (const ep of tryOrder) {
@@ -142,8 +194,9 @@ async function ensureSession(
         },
       });
 
-      // OrtDetector zaten Web Worker içinde çalıştığından iç içe pthread worker kilitlenmesini önlemek için 1 tutulur.
+      // COOP/COEP başlığı olmayan statik sunucularda SharedArrayBuffer gereksinimini ve iç içe pthread worker kilitlenmesini önler
       ort.env.wasm.numThreads = 1;
+      ort.env.wasm.proxy = false;
 
       const session = await ort.InferenceSession.create(modelBytes, {
         executionProviders: [ep],
@@ -151,7 +204,7 @@ async function ensureSession(
       });
 
       cachedSession = session;
-      cachedModelUrl = modelUrl;
+      cachedSessionKey = sessionKey;
       cachedBackend = ep === "webgpu" ? "ort-webgpu" : "ort-wasm";
 
       postOut({
@@ -291,7 +344,11 @@ self.onmessage = (ev: MessageEvent<DetectRequestMsg>) => {
   queue = queue
     .then(async () => {
       const tTotal0 = performance.now();
-      const { session, backend } = await ensureSession(msg.meta, msg.id);
+      const { session, backend } = await ensureSession(
+        msg.meta,
+        msg.id,
+        msg.epPref ?? "auto",
+      );
 
       const tPre0 = performance.now();
       const blob = new Blob([msg.buffer], {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 5173",
     "build": "tsc -b && vite build",
+    "build:space": "node scripts/build_web_space.mjs",
     "preview": "vite preview --port 5173",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -13,6 +14,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@gradio/client": "^2.8.0",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-select": "^2.1.6",
     "@radix-ui/react-slider": "^1.2.3",
@@ -49,6 +51,7 @@
     "tailwindcss": "^4.0.14",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.26.1",
+    "vite-plugin-pwa": "^2.0.0",
     "vitest": "^3.0.9"
   }
 }

@@ -1,6 +1,7 @@
 import type { DetectResult, Detection, ExplainResult } from "../types";
 
-export type BackendChoice = "mock" | "api" | "ort";
+export type BackendChoice = "mock" | "api" | "cloud" | "ort";
+export type ExplainSource = "api" | "cloud" | "mock";
 
 export interface OrtProgress {
   stage: "idle" | "downloading" | "initializing" | "ready" | "error";

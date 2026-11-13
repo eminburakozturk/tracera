@@ -88,7 +88,7 @@ describe("Tracera UI components & wording rules", () => {
     expect(infoBtn).toBeInTheDocument();
     expect(infoBtn).toHaveAttribute(
       "title",
-      "Cihazda (FP32) ve Yerel sunucu (INT8) modelleri sınır değerdeki kutularda küçük farklar gösterebilir.",
+      "Cihazda (FP32) ve Yerel sunucu (INT8) modelleri eşik sınırındaki birkaç kutuda farklı sonuç verebilir; testlerde bu farklar kart şablonundaki sabit noktalarda yoğunlaştı.",
     );
   });
 });

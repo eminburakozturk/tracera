@@ -35,10 +35,19 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
   const selectedDetectionId = useAppStore((s) => s.selectedDetectionId);
   const setSelectedDetectionId = useAppStore((s) => s.setSelectedDetectionId);
   const explainResult = useAppStore((s) => s.explainResult);
+  const explainSource = useAppStore((s) => s.explainSource);
+  const cloudSpaceId = useAppStore((s) => s.cloudSpaceId);
   const explainLoading = useAppStore((s) => s.explainLoading);
   const explainError = useAppStore((s) => s.explainError);
   const heatmapOpacity = useAppStore((s) => s.heatmapOpacity);
   const setHeatmapOpacity = useAppStore((s) => s.setHeatmapOpacity);
+
+  const renderExplainSourceLabel = () => {
+    if (!explainSource) return null;
+    if (explainSource === "api") return t("explain.sourceApi");
+    if (explainSource === "cloud") return t("explain.sourceCloud", { space: cloudSpaceId });
+    return t("explain.sourceMock");
+  };
 
   const detections = detectResult?.detections ?? [];
   const selectedDet =
@@ -65,9 +74,16 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
               <CardDescription>{t("explain.apiRequiredNote")}</CardDescription>
             </div>
             {explainResult && (
-              <Badge variant="default" className="font-mono tabular-nums">
-                Layer {explainResult.layer} · {explainResult.timing.total_ms.toFixed(1)} ms
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                {explainSource && (
+                  <Badge variant="secondary" data-testid="explain-source-badge">
+                    {t("explain.sourceLabel")}: {renderExplainSourceLabel()}
+                  </Badge>
+                )}
+                <Badge variant="default" className="font-mono tabular-nums">
+                  Layer {explainResult.layer} · {explainResult.timing.total_ms.toFixed(1)} ms
+                </Badge>
+              </div>
             )}
           </div>
         </CardHeader>

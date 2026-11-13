@@ -3,6 +3,7 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 function ortAssetsPlugin(): Plugin {
   const ortDist = path.resolve(__dirname, "node_modules/onnxruntime-web/dist");
@@ -56,7 +57,10 @@ function ortAssetsPlugin(): Plugin {
       if (!fs.existsSync(ortDist)) return;
       fs.mkdirSync(outDir, { recursive: true });
       for (const fname of fs.readdirSync(ortDist)) {
-        if (fname.endsWith(".wasm") || fname.endsWith(".mjs")) {
+        if (
+          fname.startsWith("ort-wasm-") &&
+          (fname.endsWith(".wasm") || fname.endsWith(".mjs"))
+        ) {
           fs.copyFileSync(path.join(ortDist, fname), path.join(outDir, fname));
         }
       }
@@ -65,7 +69,89 @@ function ortAssetsPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), ortAssetsPlugin()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    ortAssetsPlugin(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: [
+        "icons/icon.svg",
+        "icons/icon-192.png",
+        "icons/icon-512.png",
+      ],
+      manifest: {
+        name: "Tracera — Açıklanabilir PCB Hata Tespiti",
+        short_name: "Tracera",
+        description:
+          "Baskı devre kartı (PCB) üretim kusuru tespiti ve LayerCAM açıklanabilirlik aracı.",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        background_color: "#090d14",
+        theme_color: "#090d14",
+        lang: "tr",
+        icons: [
+          {
+            src: "/icons/icon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/icons/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any maskable",
+          },
+          {
+            src: "/icons/icon.svg",
+            sizes: "any",
+            type: "image/svg+xml",
+            purpose: "any",
+          },
+        ],
+      },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 50 * 1024 * 1024,
+        globPatterns: [
+          "**/*.{js,css,html,ico,png,svg,json,jpg}",
+          "models/tracera_1024.onnx",
+          "models/meta.json",
+          "ort/ort-wasm-simd-threaded.wasm",
+          "ort/ort-wasm-simd-threaded.mjs",
+          "ort/ort-wasm-simd-threaded.jsep.wasm",
+          "ort/ort-wasm-simd-threaded.jsep.mjs",
+        ],
+        globIgnores: ["**/tracera_1024_int8.onnx"],
+        navigateFallback: "index.html",
+        runtimeCaching: [
+          {
+            urlPattern: /\/models\/.*\.onnx$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "tracera-models-v1",
+              expiration: {
+                maxEntries: 4,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+            },
+          },
+          {
+            urlPattern: /\/ort\/.*\.(wasm|mjs)$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "tracera-ort-v1",
+              expiration: {
+                maxEntries: 12,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+            },
+          },
+        ],
+      },
+    }),
+  ],
   optimizeDeps: {
     exclude: ["onnxruntime-web"],
   },

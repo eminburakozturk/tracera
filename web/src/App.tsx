@@ -12,11 +12,12 @@ import {
   ApiDetector,
   checkApiHealth,
 } from "./inference/api/ApiDetector";
-import { ApiExplainer } from "./inference/api/ApiExplainer";
+import { CLOUD_UNAVAILABLE_MESSAGE } from "./inference/cloud/CloudClient";
+import { CloudDetector } from "./inference/cloud/CloudDetector";
+import { resolveExplain } from "./inference/explainResolver";
 import { MockDetector } from "./inference/mock/MockDetector";
-import { MockExplainer } from "./inference/mock/MockExplainer";
-import { OrtDetector } from "./inference/ort/OrtDetector";
-import type { Detector, Explainer } from "./inference/types";
+import { OrtDetector, type OrtEpPreference } from "./inference/ort/OrtDetector";
+import type { Detector } from "./inference/types";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
 import { useAppStore } from "./store/useAppStore";
@@ -32,6 +33,7 @@ export function App() {
   const lang = useAppStore((s) => s.lang);
   const backendChoice = useAppStore((s) => s.backendChoice);
   const apiBaseUrl = useAppStore((s) => s.apiBaseUrl);
+  const cloudSpaceId = useAppStore((s) => s.cloudSpaceId);
   const setApiHealth = useAppStore((s) => s.setApiHealth);
   const setMeta = useAppStore((s) => s.setMeta);
   const setConfThreshold = useAppStore((s) => s.setConfThreshold);
@@ -70,24 +72,29 @@ export function App() {
     }
   }, [apiBaseUrl, setApiHealth]);
 
+  const getOrtEpPreference = React.useCallback((): OrtEpPreference => {
+    if (typeof window === "undefined") return "auto";
+    const param = new URLSearchParams(window.location.search).get("ep");
+    if (param === "wasm" || param === "webgpu") return param;
+    return "auto";
+  }, []);
+
   const createDetector = React.useCallback((): Detector => {
     if (backendChoice === "api") {
       return new ApiDetector(apiBaseUrl);
     }
+    if (backendChoice === "cloud") {
+      return new CloudDetector(cloudSpaceId);
+    }
     if (backendChoice === "ort") {
-      return new OrtDetector(useAppStore.getState().meta, (p) =>
-        setOrtProgress(p),
+      return new OrtDetector(
+        useAppStore.getState().meta,
+        (p) => setOrtProgress(p),
+        getOrtEpPreference(),
       );
     }
     return new MockDetector();
-  }, [apiBaseUrl, backendChoice, setOrtProgress]);
-
-  const createExplainer = React.useCallback((): Explainer => {
-    if (backendChoice === "mock") {
-      return new MockExplainer();
-    }
-    return new ApiExplainer(apiBaseUrl);
-  }, [apiBaseUrl, backendChoice]);
+  }, [apiBaseUrl, backendChoice, cloudSpaceId, getOrtEpPreference, setOrtProgress]);
 
   const detectReqSeqRef = React.useRef(0);
 
@@ -205,22 +212,29 @@ export function App() {
     setExplainLoading(true);
     setExplainError(null);
     try {
-      const explainer = createExplainer();
-      const res = await explainer.explain(img.file, det);
-      setExplainResult(res);
+      const { result, source } = await resolveExplain({
+        backendChoice: state.backendChoice,
+        apiBaseUrl: state.apiBaseUrl,
+        cloudSpaceId: state.cloudSpaceId,
+        file: img.file,
+        detection: det,
+        onApiStatusChange: (status, error) => setApiHealth({ status, error }),
+      });
+      setExplainResult(result, source);
     } catch (err) {
       if (err instanceof ApiClientError && err.isOffline) {
         setApiHealth({ status: "offline", error: err.message });
         setExplainError(t("detect.apiOfflineError", { url: apiBaseUrl }));
       } else {
-        setExplainError(err instanceof Error ? err.message : String(err));
+        setExplainError(
+          err instanceof Error ? err.message : CLOUD_UNAVAILABLE_MESSAGE,
+        );
       }
     } finally {
       setExplainLoading(false);
     }
   }, [
     apiBaseUrl,
-    createExplainer,
     setApiHealth,
     setExplainError,
     setExplainLoading,

@@ -1,4 +1,4 @@
-import { Cpu, Globe, Info, Moon, RefreshCw, Server, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
+import { Cloud, Cpu, Globe, Info, Moon, RefreshCw, Server, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -37,6 +37,8 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
   const apiBaseUrl = useAppStore((s) => s.apiBaseUrl);
   const setApiBaseUrl = useAppStore((s) => s.setApiBaseUrl);
   const apiHealth = useAppStore((s) => s.apiHealth);
+  const cloudSpaceId = useAppStore((s) => s.cloudSpaceId);
+  const setCloudSpaceId = useAppStore((s) => s.setCloudSpaceId);
 
   const renderBackendBadge = () => {
     if (backendChoice === "ort") {
@@ -55,6 +57,14 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
         >
           <Server className="h-3 w-3" />
           <span>{t("backend.badgeLocalApi")}</span>
+        </Badge>
+      );
+    }
+    if (backendChoice === "cloud") {
+      return (
+        <Badge variant="default" data-testid="backend-badge">
+          <Cloud className="h-3 w-3" />
+          <span>{t("backend.badgeCloud")}</span>
         </Badge>
       );
     }
@@ -137,6 +147,7 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
                 <SelectContent>
                   <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
                   <SelectItem value="api">{t("backend.optApi")}</SelectItem>
+                  <SelectItem value="cloud">{t("backend.optCloud")}</SelectItem>
                   <SelectItem value="ort" disabled={!ortEnabled}>
                     {t("backend.optOrt")}
                   </SelectItem>
@@ -163,6 +174,18 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
               </Tooltip>
             </TooltipProvider>
           </div>
+
+          {backendChoice === "cloud" && (
+            <input
+              type="text"
+              value={cloudSpaceId}
+              onChange={(e) => setCloudSpaceId(e.target.value)}
+              aria-label={t("backend.cloudSpaceLabel")}
+              title={t("backend.cloudSpaceLabel")}
+              data-testid="cloud-space-input"
+              className="hidden h-8 w-36 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-2 font-mono text-xs text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] xl:block"
+            />
+          )}
 
           {backendChoice === "api" && (
             <div className="flex items-center gap-1.5">

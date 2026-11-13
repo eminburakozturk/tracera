@@ -2,6 +2,8 @@ import { FALLBACK_META } from "../../lib/meta";
 import type { DetectResult, ModelMeta } from "../../types";
 import type { Detector, OrtProgress } from "../types";
 
+export type OrtEpPreference = "auto" | "webgpu" | "wasm";
+
 type WorkerOutMsg =
   | { type: "progress"; id: number; progress: OrtProgress }
   | { type: "result"; id: number; result: DetectResult }
@@ -52,13 +54,16 @@ function getWorker(): Worker {
 export class OrtDetector implements Detector {
   private meta: ModelMeta;
   private onProgress?: (progress: OrtProgress) => void;
+  private epPref: OrtEpPreference;
 
   constructor(
     meta: ModelMeta = FALLBACK_META,
     onProgress?: (progress: OrtProgress) => void,
+    epPref: OrtEpPreference = "auto",
   ) {
     this.meta = meta;
     this.onProgress = onProgress;
+    this.epPref = epPref;
   }
 
   async detect(file: File, conf: number): Promise<DetectResult> {
@@ -80,6 +85,7 @@ export class OrtDetector implements Detector {
           mimeType: file.type || "image/jpeg",
           conf,
           meta: this.meta,
+          epPref: this.epPref,
         },
         [buffer],
       );
