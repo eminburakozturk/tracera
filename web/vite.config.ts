@@ -5,6 +5,30 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const REQUIRED_ORT_FILES = [
+  "ort-wasm-simd-threaded.jsep.mjs",
+  "ort-wasm-simd-threaded.jsep.wasm",
+];
+
+function computeDownloadStats() {
+  const onnxPath = path.resolve(__dirname, "public/models/tracera_1024.onnx");
+  const ortDist = path.resolve(__dirname, "node_modules/onnxruntime-web/dist");
+  const onnxBytes = fs.existsSync(onnxPath)
+    ? fs.statSync(onnxPath).size
+    : 38_198_527;
+  let ortBytes = 0;
+  for (const fname of REQUIRED_ORT_FILES) {
+    const p = path.join(ortDist, fname);
+    if (fs.existsSync(p)) ortBytes += fs.statSync(p).size;
+  }
+  if (ortBytes === 0) ortBytes = 29_568_221;
+  return {
+    modelMb: Math.round(onnxBytes / (1024 * 1024)),
+    runtimeMb: Math.round(ortBytes / (1024 * 1024)),
+    totalMb: Math.round((onnxBytes + ortBytes) / (1024 * 1024)),
+  };
+}
+
 function ortAssetsPlugin(): Plugin {
   const ortDist = path.resolve(__dirname, "node_modules/onnxruntime-web/dist");
   const spikeValDir = path.resolve(__dirname, "../web_spike/val_images");
@@ -56,10 +80,7 @@ function ortAssetsPlugin(): Plugin {
       const outDir = options.dir ? path.resolve(options.dir, "ort") : path.resolve(__dirname, "dist/ort");
       if (!fs.existsSync(ortDist)) return;
       fs.mkdirSync(outDir, { recursive: true });
-      const requiredOrtFiles = new Set([
-        "ort-wasm-simd-threaded.jsep.mjs",
-        "ort-wasm-simd-threaded.jsep.wasm",
-      ]);
+      const requiredOrtFiles = new Set(REQUIRED_ORT_FILES);
       for (const fname of fs.readdirSync(ortDist)) {
         if (requiredOrtFiles.has(fname)) {
           fs.copyFileSync(path.join(ortDist, fname), path.join(outDir, fname));
@@ -85,6 +106,9 @@ function ortAssetsPlugin(): Plugin {
 }
 
 export default defineConfig({
+  define: {
+    __TRACERA_DOWNLOAD_INFO__: JSON.stringify(computeDownloadStats()),
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -133,6 +157,7 @@ export default defineConfig({
         globPatterns: [
           "**/*.{js,css,html,ico,png,svg,webmanifest}",
           "metrics.json",
+          "analysis.json",
           "models/meta.json",
         ],
         globIgnores: [
@@ -141,6 +166,7 @@ export default defineConfig({
           "models/*.onnx",
           "ort/**",
           "examples/**",
+          "analysis/**",
         ],
         navigateFallback: "index.html",
         runtimeCaching: [
@@ -169,10 +195,22 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /\/examples\/.*\.(jpg|jpeg|png)$/i,
+            urlPattern: /\/examples\/.*\.(jpg|jpeg|png|mp4|webm)$/i,
             handler: "CacheFirst",
             options: {
               cacheName: "tracera-examples-v1",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 16,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+            },
+          },
+          {
+            urlPattern: /\/analysis\/.*\.png$/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "tracera-analysis-v1",
               cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 16,

@@ -6,6 +6,7 @@
   },
   "nav": {
     "detect": "Tespit",
+    "live": "Canlı",
     "explain": "Açıkla",
     "results": "Sonuçlar",
     "about": "Hakkında"
@@ -62,7 +63,7 @@
     "totalTime": "Toplam",
     "selectHint": "Kutuya veya kartlara tıklayarak bir tespiti seçin.",
     "ortDisabledNotice": "Tarayıcı içi çıkarım (ONNX Runtime Web) henüz etkin değil; Adım 3 parite doğrulamasından sonra açılacaktır.",
-    "modelDownloadNotice": "İlk tespitte model indirilecek (~36 MB)",
+    "modelDownloadNotice": "İlk tespitte model ({{modelMb}} MB) + çalışma zamanı ({{runtimeMb}} MB) indirilecek (~{{totalMb}} MB)",
     "apiOfflineError": "Yerel sunucu kapalı ({{url}}). Lütfen `uvicorn api.main:app --port 8765` komutuyla başlatın veya başka bir çıkarım motoru seçin."
   },
   "explain": {
@@ -104,7 +105,33 @@
     "webSpikeTitle": "4. Tarayıcı İçi Çıkarım Fizibilitesi (10 Val Görüntüsü)",
     "xaiTitle": "5. XAI Sadakat Doğrulaması (Val, n={{n}}, Katman 4)",
     "aoiTitle": "6. Endüstriyel PCB-AoI Temsil Transferi (Null Sonuç, 3 Seed)",
-    "aoiNote": "PKU ve COCO başlangıçları arasında anlamlı bir fark gösterilememiştir; fark seed varyansının içindedir (n=3)."
+    "aoiNote": "PKU ve COCO başlangıçları arasında anlamlı bir fark gösterilememiştir; fark seed varyansının içindedir (n=3).",
+    "errorAnalysisTitle": "7. Hata Analizi Galerisi (FP Dağılımı & Şablon Noktaları)",
+    "errorAnalysisDesc": "error_analysis.csv (n={{totalFp}} FP), template_check.csv ve quant_parity.csv verilerinden otomatik üretilmiştir.",
+    "fpMatrixTitle": "Kart × Sınıf Yanlış Pozitif (FP) Tablosu",
+    "templateSpotsTitle": "Kart 06'daki 2 Sabit Şablon Noktası (Temiz Şablon Karşılaştırması)",
+    "quantParityTitle": "FP32 – INT8 Niceleme Kıyası (Val)",
+    "quantParityNote": "Güven ≥ 0.395'teki tüm FP32–INT8 farklılıkları Kart 05 şablonundaki 2 sabit spurious_copper konumunda toplanmıştır; rastgele dağılım değildir.",
+    "templateAlarmYes": "Evet ({{conf}})",
+    "templateAlarmNo": "Hayır (<0.395)",
+    "fpCropLabel": "Test Hatası (FP)",
+    "tplCropLabel": "Temiz Şablon (06.JPG)"
+  },
+  "live": {
+    "title": "Canlı Video & Kamera Denetimi (ONNX Runtime Web)",
+    "subtitle": "Kareler sıra beklemeden (kuyruk yok) Worker'a gönderilir; önceki kare işlenirken yenileri atlanır.",
+    "loadSampleVideo": "Val Test Videosunu Yükle (val_pan.mp4)",
+    "pickVideoFile": "Video Dosyası Seç (.mp4 / .webm)",
+    "startCamera": "Kamerayı Başlat",
+    "stopCamera": "Kamerayı Durdur",
+    "pauseBtn": "Duraklat",
+    "resumeBtn": "Devam Et",
+    "cameraNote": "Deneysel — model yukarıdan çekilmiş yüksek çözünürlüklü kart fotoğraflarıyla eğitildi; telefon kamerasında doğruluk düşebilir.",
+    "cameraError": "Kamera erişimi reddedildi veya bu cihazda kamera bulunamadı.",
+    "fpsLabel": "FPS (son 30 kare)",
+    "modelMsLabel": "Model Gecikmesi",
+    "droppedLabel": "Atlanan Kare",
+    "detCountLabel": "Aktif Kutu"
   },
   "about": {
     "title": "Tracera Hakkında",

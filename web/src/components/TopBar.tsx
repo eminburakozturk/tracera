@@ -119,6 +119,9 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
             <TabsTrigger value="detect" data-testid="tab-detect">
               {t("nav.detect")}
             </TabsTrigger>
+            <TabsTrigger value="live" data-testid="tab-live">
+              {t("nav.live")}
+            </TabsTrigger>
             <TabsTrigger value="explain" data-testid="tab-explain">
               {t("nav.explain")}
             </TabsTrigger>

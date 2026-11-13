@@ -17,6 +17,17 @@ interface DetectRequestMsg {
   epPref?: EpPreference;
 }
 
+interface DetectBitmapRequestMsg {
+  type: "detectBitmap";
+  id: number;
+  bitmap: ImageBitmap;
+  conf: number;
+  meta: ModelMeta;
+  epPref?: EpPreference;
+}
+
+type WorkerInMsg = DetectRequestMsg | DetectBitmapRequestMsg;
+
 type WorkerOutMsg =
   | { type: "progress"; id: number; progress: OrtProgress }
   | { type: "result"; id: number; result: DetectResult }
@@ -337,9 +348,66 @@ function preprocessBilinearLetterbox(
 
 let queue: Promise<void> = Promise.resolve();
 
-self.onmessage = (ev: MessageEvent<DetectRequestMsg>) => {
+async function runDetectionOnBitmap(
+  bitmap: ImageBitmap,
+  msg: WorkerInMsg,
+  tPre0: number,
+  tTotal0: number,
+  session: ort.InferenceSession,
+  backend: "ort-webgpu" | "ort-wasm",
+): Promise<DetectResult> {
+  let tensor: ort.Tensor | null = null;
+  let outTensor: ort.Tensor | null = null;
+  try {
+    const pre = preprocessBilinearLetterbox(
+      bitmap,
+      msg.meta.imgsz,
+      msg.meta.letterbox_pad,
+    );
+    tensor = pre.tensor;
+    const tPre1 = performance.now();
+
+    const tModel0 = performance.now();
+    const inputName = session.inputNames[0] ?? "images";
+    const outputs = await session.run({ [inputName]: tensor });
+    const outputName = session.outputNames[0] ?? Object.keys(outputs)[0];
+    outTensor = outputs[outputName];
+    const rawData = (await outTensor.getData()) as Float32Array;
+    const tModel1 = performance.now();
+
+    const tPost0 = performance.now();
+    const detections = postprocessYolo(
+      rawData,
+      outTensor.dims,
+      pre.lb,
+      msg.meta,
+      msg.conf,
+    );
+    const tPost1 = performance.now();
+
+    const tTotal1 = performance.now();
+    return {
+      width: pre.origW,
+      height: pre.origH,
+      detections,
+      timing: {
+        pre_ms: Number((tPre1 - tPre0).toFixed(2)),
+        model_ms: Number((tModel1 - tModel0).toFixed(2)),
+        post_ms: Number((tPost1 - tPost0).toFixed(2)),
+        total_ms: Number((tTotal1 - tTotal0).toFixed(2)),
+      },
+      backend,
+    };
+  } finally {
+    bitmap.close();
+    tensor?.dispose();
+    outTensor?.dispose();
+  }
+}
+
+self.onmessage = (ev: MessageEvent<WorkerInMsg>) => {
   const msg = ev.data;
-  if (msg.type !== "detect") return;
+  if (msg.type !== "detect" && msg.type !== "detectBitmap") return;
 
   queue = queue
     .then(async () => {
@@ -351,63 +419,28 @@ self.onmessage = (ev: MessageEvent<DetectRequestMsg>) => {
       );
 
       const tPre0 = performance.now();
-      const blob = new Blob([msg.buffer], {
-        type: msg.mimeType || "image/jpeg",
-      });
-      const bitmap = await createImageBitmap(blob, {
-        colorSpaceConversion: "none",
-        premultiplyAlpha: "none",
-      });
+      const bitmap =
+        msg.type === "detectBitmap"
+          ? msg.bitmap
+          : await createImageBitmap(
+              new Blob([msg.buffer], {
+                type: msg.mimeType || "image/jpeg",
+              }),
+              {
+                colorSpaceConversion: "none",
+                premultiplyAlpha: "none",
+              },
+            );
 
-      let tensor: ort.Tensor | null = null;
-      let outTensor: ort.Tensor | null = null;
-      try {
-        const pre = preprocessBilinearLetterbox(
-          bitmap,
-          msg.meta.imgsz,
-          msg.meta.letterbox_pad,
-        );
-        tensor = pre.tensor;
-        const tPre1 = performance.now();
-
-        const tModel0 = performance.now();
-        const inputName = session.inputNames[0] ?? "images";
-        const outputs = await session.run({ [inputName]: tensor });
-        const outputName = session.outputNames[0] ?? Object.keys(outputs)[0];
-        outTensor = outputs[outputName];
-        const rawData = (await outTensor.getData()) as Float32Array;
-        const tModel1 = performance.now();
-
-        const tPost0 = performance.now();
-        const detections = postprocessYolo(
-          rawData,
-          outTensor.dims,
-          pre.lb,
-          msg.meta,
-          msg.conf,
-        );
-        const tPost1 = performance.now();
-
-        const tTotal1 = performance.now();
-        const result: DetectResult = {
-          width: pre.origW,
-          height: pre.origH,
-          detections,
-          timing: {
-            pre_ms: Number((tPre1 - tPre0).toFixed(2)),
-            model_ms: Number((tModel1 - tModel0).toFixed(2)),
-            post_ms: Number((tPost1 - tPost0).toFixed(2)),
-            total_ms: Number((tTotal1 - tTotal0).toFixed(2)),
-          },
-          backend,
-        };
-
-        postOut({ type: "result", id: msg.id, result });
-      } finally {
-        bitmap.close();
-        tensor?.dispose();
-        outTensor?.dispose();
-      }
+      const result = await runDetectionOnBitmap(
+        bitmap,
+        msg,
+        tPre0,
+        tTotal0,
+        session,
+        backend,
+      );
+      postOut({ type: "result", id: msg.id, result });
     })
     .catch((err) => {
       postOut({

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AboutView } from "./components/AboutView";
 import { DetectView } from "./components/DetectView";
 import { ExplainView } from "./components/ExplainView";
+import { LiveView } from "./components/LiveView";
 import { MobileNav } from "./components/MobileNav";
 import { ResultsView } from "./components/ResultsView";
 import { TopBar } from "./components/TopBar";
@@ -22,6 +23,7 @@ import {
   type OrtEpPreference,
 } from "./inference/ort/OrtDetector";
 import type { Detector } from "./inference/types";
+import { loadAnalysis } from "./lib/analysis";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
 import { useAppStore } from "./store/useAppStore";
@@ -42,6 +44,7 @@ export function App() {
   const setMeta = useAppStore((s) => s.setMeta);
   const setConfThreshold = useAppStore((s) => s.setConfThreshold);
   const setMetrics = useAppStore((s) => s.setMetrics);
+  const setAnalysis = useAppStore((s) => s.setAnalysis);
   const selectedImage = useAppStore((s) => s.selectedImage);
   const setSelectedImage = useAppStore((s) => s.setSelectedImage);
   const confThreshold = useAppStore((s) => s.confThreshold);
@@ -289,6 +292,11 @@ export function App() {
       );
       setMetrics(loadedMetrics, source);
 
+      const loadedAnalysis = await loadAnalysis();
+      if (loadedAnalysis) {
+        setAnalysis(loadedAnalysis);
+      }
+
       const cached = await isOrtModelCached(loadedMeta.onnx);
       setOrtModelCached(cached);
 
@@ -302,7 +310,14 @@ export function App() {
         }
       }
     })();
-  }, [handleSelectExample, setConfThreshold, setMeta, setMetrics, setOrtModelCached]);
+  }, [
+    handleSelectExample,
+    setAnalysis,
+    setConfThreshold,
+    setMeta,
+    setMetrics,
+    setOrtModelCached,
+  ]);
 
   // Suppress unused variable warnings on confThreshold/detectResult/selectedDetectionId if needed
   void confThreshold;
@@ -330,6 +345,7 @@ export function App() {
             onInspectDetection={handleInspectDetection}
           />
         )}
+        {activeTab === "live" && <LiveView />}
         {activeTab === "explain" && (
           <ExplainView onRunExplain={handleRunExplain} />
         )}

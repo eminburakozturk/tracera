@@ -1,10 +1,11 @@
-import { BarChart3, Flame, Info, ScanSearch } from "lucide-react";
+import { BarChart3, Flame, Info, ScanSearch, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppStore, type AppTab } from "../store/useAppStore";
 import { cn } from "../lib/utils";
 
 const NAV_ITEMS: Array<{ id: AppTab; icon: typeof ScanSearch; key: string }> = [
   { id: "detect", icon: ScanSearch, key: "nav.detect" },
+  { id: "live", icon: Video, key: "nav.live" },
   { id: "explain", icon: Flame, key: "nav.explain" },
   { id: "results", icon: BarChart3, key: "nav.results" },
   { id: "about", icon: Info, key: "nav.about" },
@@ -18,7 +19,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Mobil alt gezinme"
-      className="sticky bottom-0 z-40 grid grid-cols-4 border-t border-[var(--border-hairline)] bg-[var(--bg-surface)]/95 backdrop-blur-md sm:hidden"
+      className="sticky bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border-hairline)] bg-[var(--bg-surface)]/95 backdrop-blur-md sm:hidden"
     >
       {NAV_ITEMS.map(({ id, icon: Icon, key }) => {
         const active = activeTab === id;

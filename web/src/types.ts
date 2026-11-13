@@ -177,3 +177,52 @@ export interface MetricsPayload {
   final_test?: Array<Record<string, string | number>>;
   web_spike?: WebSpikeRow[];
 }
+
+export interface BoardClassFpRow {
+  split: string;
+  kart_no: string;
+  counts: Record<string, number>;
+  total: number;
+}
+
+export interface TemplateSpotArtifact {
+  id: string;
+  kart_no: string;
+  cls: string;
+  cx: number;
+  cy: number;
+  fp_count: number;
+  conf_min: number;
+  conf_max: number;
+  template_alarm: boolean;
+  template_conf: number | null;
+  fp_crop: string;
+  template_crop: string;
+}
+
+export interface TemplateCleanRow {
+  kart_no: string;
+  dosya: string;
+  cls: string;
+  conf: number;
+  cx: number;
+  cy: number;
+}
+
+export interface QuantParityRow {
+  conf_esik: number;
+  eslesen: number;
+  yalniz_fp32: number;
+  yalniz_int8: number;
+  ort_iou: number;
+  ort_dconf: number;
+}
+
+export interface ErrorAnalysisPayload {
+  classes: string[];
+  total_fp_rows: number;
+  board_class_matrix: BoardClassFpRow[];
+  template_spots: TemplateSpotArtifact[];
+  template_clean_rows: TemplateCleanRow[];
+  quant_parity: QuantParityRow[];
+}

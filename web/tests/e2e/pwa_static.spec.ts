@@ -87,9 +87,7 @@ test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM
     const isolated = await page.evaluate(() => window.crossOriginIsolated);
     expect(isolated).toBe(false);
 
-    await expect(page.getByTestId("model-download-notice")).toContainText(
-      "İlk tespitte model indirilecek (~36 MB)",
-    );
+    await expect(page.getByTestId("model-download-notice")).toContainText("~65 MB");
     await expect(page.getByTestId("run-detect-btn")).toBeEnabled({ timeout: 15_000 });
     await page.getByTestId("run-detect-btn").click();
 
@@ -128,9 +126,7 @@ test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM
     );
 
     // (a) İlk açılışta ONNX ve ORT WASM ağdan indirilmemiş olmalı; kullanıcı bilgilendirilmeli
-    await expect(page.getByTestId("model-download-notice")).toContainText(
-      "İlk tespitte model indirilecek (~36 MB)",
-    );
+    await expect(page.getByTestId("model-download-notice")).toContainText("~65 MB");
     expect(networkUrls.some((u) => u.includes("tracera_1024.onnx"))).toBe(false);
     expect(networkUrls.some((u) => u.includes(".wasm"))).toBe(false);
 

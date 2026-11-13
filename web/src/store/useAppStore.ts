@@ -5,13 +5,14 @@ import { DEFAULT_CLOUD_SPACE } from "../inference/cloud/CloudClient";
 import type { BackendChoice, ExplainSource, OrtProgress } from "../inference/types";
 import type {
   DetectResult,
+  ErrorAnalysisPayload,
   ExplainResult,
   HealthResponse,
   MetricsPayload,
   ModelMeta,
 } from "../types";
 
-export type AppTab = "detect" | "explain" | "results" | "about";
+export type AppTab = "detect" | "live" | "explain" | "results" | "about";
 export type ThemeMode = "dark" | "light";
 export type LangCode = "tr" | "en";
 
@@ -38,6 +39,7 @@ interface AppState {
   meta: ModelMeta;
   metrics: MetricsPayload | null;
   metricsSource: "api" | "static" | "fallback" | null;
+  analysis: ErrorAnalysisPayload | null;
 
   selectedImage: SelectedImageState | null;
   confThreshold: number;
@@ -65,6 +67,7 @@ interface AppState {
   setCloudSpaceId: (spaceId: string) => void;
   setMeta: (meta: ModelMeta) => void;
   setMetrics: (metrics: MetricsPayload, source: "api" | "static" | "fallback") => void;
+  setAnalysis: (analysis: ErrorAnalysisPayload | null) => void;
 
   setSelectedImage: (img: SelectedImageState | null) => void;
   setConfThreshold: (conf: number) => void;
@@ -94,6 +97,7 @@ export const useAppStore = create<AppState>((set) => ({
   meta: FALLBACK_META,
   metrics: null,
   metricsSource: null,
+  analysis: null,
 
   selectedImage: null,
   confThreshold: FALLBACK_META.conf,
@@ -121,6 +125,7 @@ export const useAppStore = create<AppState>((set) => ({
   setCloudSpaceId: (cloudSpaceId) => set({ cloudSpaceId }),
   setMeta: (meta) => set({ meta }),
   setMetrics: (metrics, metricsSource) => set({ metrics, metricsSource }),
+  setAnalysis: (analysis) => set({ analysis }),
 
   setSelectedImage: (img) =>
     set((prev) => {

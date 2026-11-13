@@ -6,6 +6,7 @@
   },
   "nav": {
     "detect": "Detect",
+    "live": "Live",
     "explain": "Explain",
     "results": "Results",
     "about": "About"
@@ -62,7 +63,7 @@
     "totalTime": "Total",
     "selectHint": "Click any bounding box or detection card to select it.",
     "ortDisabledNotice": "In-browser inference (ONNX Runtime Web) is not active yet; it will be enabled after Step 3 parity verification.",
-    "modelDownloadNotice": "Model (~36 MB) will be downloaded on first detection",
+    "modelDownloadNotice": "First detection downloads model ({{modelMb}} MB) + runtime ({{runtimeMb}} MB) (~{{totalMb}} MB)",
     "apiOfflineError": "Local server is offline ({{url}}). Please start it with `uvicorn api.main:app --port 8765` or choose another backend."
   },
   "explain": {
@@ -104,7 +105,33 @@
     "webSpikeTitle": "4. Browser Inference Feasibility (10 Val Images)",
     "xaiTitle": "5. XAI Faithfulness Verification (Val, n={{n}}, Layer 4)",
     "aoiTitle": "6. Industrial PCB-AoI Representation Transfer (Null Result, 3 Seeds)",
-    "aoiNote": "No significant gain was shown between PKU and COCO initializations; the difference lies within seed variance (n=3)."
+    "aoiNote": "No significant gain was shown between PKU and COCO initializations; the difference lies within seed variance (n=3).",
+    "errorAnalysisTitle": "7. Error Analysis Gallery (FP Matrix & Template Artifacts)",
+    "errorAnalysisDesc": "Automatically generated from error_analysis.csv (n={{totalFp}} FPs), template_check.csv, and quant_parity.csv.",
+    "fpMatrixTitle": "Board × Class False Positive (FP) Table",
+    "templateSpotsTitle": "2 Fixed Template Points on Board 06 (Clean Template Comparison)",
+    "quantParityTitle": "FP32 – INT8 Quantization Parity (Val)",
+    "quantParityNote": "All FP32–INT8 differences at conf ≥ 0.395 cluster at 2 fixed spurious_copper template spots on Board 05.",
+    "templateAlarmYes": "Yes ({{conf}})",
+    "templateAlarmNo": "No (<0.395)",
+    "fpCropLabel": "Test FP",
+    "tplCropLabel": "Clean Template (06.JPG)"
+  },
+  "live": {
+    "title": "Live Video & Camera Inspection (ONNX Runtime Web)",
+    "subtitle": "Frames go to the Worker without queuing; new frames drop cleanly while the previous frame runs.",
+    "loadSampleVideo": "Load Val Test Video (val_pan.mp4)",
+    "pickVideoFile": "Choose Video File (.mp4 / .webm)",
+    "startCamera": "Start Camera",
+    "stopCamera": "Stop Camera",
+    "pauseBtn": "Pause",
+    "resumeBtn": "Resume",
+    "cameraNote": "Experimental — the model was trained on top-down high-resolution board photos; accuracy may drop on phone cameras.",
+    "cameraError": "Camera permission denied or no camera available on this device.",
+    "fpsLabel": "FPS (last 30 frames)",
+    "modelMsLabel": "Model Latency",
+    "droppedLabel": "Dropped Frames",
+    "detCountLabel": "Active Boxes"
   },
   "about": {
     "title": "About Tracera",

@@ -19,6 +19,7 @@ import {
   downloadAnnotatedPng,
   downloadDetectJson,
 } from "../lib/download";
+import { getDownloadStats } from "../lib/downloadInfo";
 import { cn } from "../lib/utils";
 import { useAppStore } from "../store/useAppStore";
 import type { Detection } from "../types";
@@ -217,7 +218,7 @@ export function DetectView({
                     className="flex items-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-xs text-sky-900 dark:text-sky-200"
                   >
                     <Info className="h-4 w-4 shrink-0 text-[var(--accent)]" />
-                    <span>{t("detect.modelDownloadNotice")}</span>
+                    <span>{t("detect.modelDownloadNotice", getDownloadStats())}</span>
                   </div>
                 )}
 

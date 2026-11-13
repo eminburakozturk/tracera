@@ -1,4 +1,6 @@
+import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { loadAnalysis } from "../lib/analysis";
 import { useAppStore } from "../store/useAppStore";
 import { Badge } from "./ui/badge";
 import {
@@ -23,6 +25,21 @@ export function ResultsView() {
   const { t } = useTranslation();
   const metrics = useAppStore((s) => s.metrics);
   const metricsSource = useAppStore((s) => s.metricsSource);
+  const analysis = useAppStore((s) => s.analysis);
+  const setAnalysis = useAppStore((s) => s.setAnalysis);
+
+  React.useEffect(() => {
+    if (analysis) return;
+    let cancelled = false;
+    void loadAnalysis().then((loaded) => {
+      if (!cancelled && loaded) {
+        setAnalysis(loaded);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [analysis, setAnalysis]);
 
   if (!metrics) {
     return (
@@ -357,6 +374,180 @@ export function ResultsView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 7. Hata Analizi Galerisi */}
+      {analysis && (
+        <Card data-testid="error-analysis-section">
+          <CardHeader>
+            <CardTitle>{t("results.errorAnalysisTitle")}</CardTitle>
+            <CardDescription>
+              {t("results.errorAnalysisDesc", { totalFp: analysis.total_fp_rows })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Kart × Sınıf FP tablosu */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                {t("results.fpMatrixTitle")}
+              </h3>
+              <div className="overflow-x-auto">
+                <table
+                  className="w-full text-left font-mono text-xs tabular-nums"
+                  data-testid="fp-matrix-table"
+                >
+                  <thead>
+                    <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
+                      <th className="py-2 pr-3">Kart</th>
+                      <th className="py-2 pr-3">Split</th>
+                      {analysis.classes.map((cls) => (
+                        <th key={cls} className="py-2 pr-3">
+                          {cls}
+                        </th>
+                      ))}
+                      <th className="py-2 font-semibold">Toplam</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysis.board_class_matrix.map((row) => (
+                      <tr
+                        key={`${row.split}-${row.kart_no}`}
+                        className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
+                      >
+                        <td className="py-2 pr-3 font-semibold">{row.kart_no}</td>
+                        <td className="py-2 pr-3 text-[var(--text-secondary)]">
+                          {row.split}
+                        </td>
+                        {analysis.classes.map((cls) => (
+                          <td key={cls} className="py-2 pr-3">
+                            {row.counts[cls] ?? 0}
+                          </td>
+                        ))}
+                        <td className="py-2 font-semibold">{row.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-[var(--border-hairline)] font-semibold text-[var(--text-primary)]">
+                      <td className="py-2 pr-3" colSpan={2}>
+                        Toplam
+                      </td>
+                      {analysis.classes.map((cls) => (
+                        <td key={cls} className="py-2 pr-3">
+                          {analysis.board_class_matrix.reduce(
+                            (acc, r) => acc + (r.counts[cls] ?? 0),
+                            0,
+                          )}
+                        </td>
+                      ))}
+                      <td className="py-2">{analysis.total_fp_rows}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Kart 06'daki 2 Sabit Şablon Noktası */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                {t("results.templateSpotsTitle")}
+              </h3>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {analysis.template_spots.map((spot) => (
+                  <div
+                    key={spot.id}
+                    data-testid={`template-spot-${spot.cls}`}
+                    className="elevated-card space-y-3 rounded-lg p-3.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-sm font-semibold text-[var(--text-primary)]">
+                          Kart {spot.kart_no} · {spot.cls}
+                        </p>
+                        <p className="font-mono text-xs text-[var(--text-muted)]">
+                          ({spot.cx}, {spot.cy}) · n={spot.fp_count} · conf{" "}
+                          {fmtNum(spot.conf_min, 4)}–{fmtNum(spot.conf_max, 4)}
+                        </p>
+                      </div>
+                      <Badge variant={spot.template_alarm ? "danger" : "outline"}>
+                        {spot.template_alarm
+                          ? t("results.templateAlarmYes", {
+                              conf: fmtNum(spot.template_conf, 4),
+                            })
+                          : t("results.templateAlarmNo")}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <figure className="space-y-1">
+                        <img
+                          src={spot.fp_crop}
+                          alt={`${spot.cls} FP`}
+                          className="aspect-square w-full rounded border border-[var(--border-hairline)] object-cover"
+                        />
+                        <figcaption className="text-[11px] text-[var(--text-muted)]">
+                          {t("results.fpCropLabel")}
+                        </figcaption>
+                      </figure>
+                      <figure className="space-y-1">
+                        <img
+                          src={spot.template_crop}
+                          alt={`${spot.cls} Template`}
+                          className="aspect-square w-full rounded border border-[var(--border-hairline)] object-cover"
+                        />
+                        <figcaption className="text-[11px] text-[var(--text-muted)]">
+                          {t("results.tplCropLabel")}
+                        </figcaption>
+                      </figure>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* FP32 vs INT8 Niceleme Kıyası */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                {t("results.quantParityTitle")}
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)]">
+                {t("results.quantParityNote")}
+              </p>
+              <div className="overflow-x-auto">
+                <table
+                  className="w-full text-left font-mono text-xs tabular-nums"
+                  data-testid="quant-parity-table"
+                >
+                  <thead>
+                    <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
+                      <th className="py-2 pr-3">conf_esik</th>
+                      <th className="py-2 pr-3">eslesen</th>
+                      <th className="py-2 pr-3">yalniz_fp32</th>
+                      <th className="py-2 pr-3">yalniz_int8</th>
+                      <th className="py-2 pr-3">ort_iou</th>
+                      <th className="py-2">ort_dconf</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysis.quant_parity.map((q) => (
+                      <tr
+                        key={q.conf_esik}
+                        className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
+                      >
+                        <td className="py-2 pr-3 font-semibold">{q.conf_esik}</td>
+                        <td className="py-2 pr-3">{q.eslesen}</td>
+                        <td className="py-2 pr-3">{q.yalniz_fp32}</td>
+                        <td className="py-2 pr-3">{q.yalniz_int8}</td>
+                        <td className="py-2 pr-3">{fmtNum(q.ort_iou, 4)}</td>
+                        <td className="py-2">{fmtNum(q.ort_dconf, 4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

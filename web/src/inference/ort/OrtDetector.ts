@@ -105,4 +105,28 @@ export class OrtDetector implements Detector {
       );
     });
   }
+
+  async detectBitmap(bitmap: ImageBitmap, conf: number): Promise<DetectResult> {
+    const worker = getWorker();
+    const id = nextRequestId++;
+
+    return new Promise<DetectResult>((resolve, reject) => {
+      pending.set(id, {
+        resolve,
+        reject,
+        onProgress: this.onProgress,
+      });
+      worker.postMessage(
+        {
+          type: "detectBitmap",
+          id,
+          bitmap,
+          conf,
+          meta: this.meta,
+          epPref: this.epPref,
+        },
+        [bitmap],
+      );
+    });
+  }
 }

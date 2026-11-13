@@ -1,0 +1,139 @@
+{
+  "classes": [
+    "missing_hole",
+    "mouse_bite",
+    "open_circuit",
+    "short",
+    "spur",
+    "spurious_copper"
+  ],
+  "total_fp_rows": 158,
+  "board_class_matrix": [
+    {
+      "split": "test",
+      "kart_no": "06",
+      "counts": {
+        "missing_hole": 2,
+        "mouse_bite": 62,
+        "open_circuit": 6,
+        "short": 2,
+        "spur": 63,
+        "spurious_copper": 3
+      },
+      "total": 138
+    },
+    {
+      "split": "test",
+      "kart_no": "10",
+      "counts": {
+        "missing_hole": 0,
+        "mouse_bite": 0,
+        "open_circuit": 0,
+        "short": 2,
+        "spur": 1,
+        "spurious_copper": 1
+      },
+      "total": 4
+    },
+    {
+      "split": "val",
+      "kart_no": "05",
+      "counts": {
+        "missing_hole": 0,
+        "mouse_bite": 2,
+        "open_circuit": 1,
+        "short": 1,
+        "spur": 3,
+        "spurious_copper": 1
+      },
+      "total": 8
+    },
+    {
+      "split": "val",
+      "kart_no": "11",
+      "counts": {
+        "missing_hole": 4,
+        "mouse_bite": 0,
+        "open_circuit": 1,
+        "short": 2,
+        "spur": 0,
+        "spurious_copper": 1
+      },
+      "total": 8
+    }
+  ],
+  "template_spots": [
+    {
+      "id": "b06_mouse_bite_1001_1380",
+      "kart_no": "06",
+      "cls": "mouse_bite",
+      "cx": 1001,
+      "cy": 1380,
+      "fp_count": 57,
+      "conf_min": 0.4406,
+      "conf_max": 0.6331,
+      "template_alarm": true,
+      "template_conf": 0.5569,
+      "fp_crop": "/analysis/fp_mouse_bite_spot.png",
+      "template_crop": "/analysis/template_06_mouse_bite.png"
+    },
+    {
+      "id": "b06_spur_1708_1050",
+      "kart_no": "06",
+      "cls": "spur",
+      "cx": 1708,
+      "cy": 1050,
+      "fp_count": 57,
+      "conf_min": 0.397,
+      "conf_max": 0.4567,
+      "template_alarm": false,
+      "template_conf": null,
+      "fp_crop": "/analysis/fp_spur_spot.png",
+      "template_crop": "/analysis/template_06_spur.png"
+    }
+  ],
+  "template_clean_rows": [
+    {
+      "kart_no": "05",
+      "dosya": "05.JPG",
+      "cls": "spurious_copper",
+      "conf": 0.5108,
+      "cx": 1606.5,
+      "cy": 1072.9
+    },
+    {
+      "kart_no": "05",
+      "dosya": "05.JPG",
+      "cls": "spurious_copper",
+      "conf": 0.4475,
+      "cx": 1537.1,
+      "cy": 1183.2
+    },
+    {
+      "kart_no": "06",
+      "dosya": "06.JPG",
+      "cls": "mouse_bite",
+      "conf": 0.5569,
+      "cx": 1000.6,
+      "cy": 1380.1
+    }
+  ],
+  "quant_parity": [
+    {
+      "conf_esik": 0.25,
+      "eslesen": 59,
+      "yalniz_fp32": 3,
+      "yalniz_int8": 1,
+      "ort_iou": 0.953695,
+      "ort_dconf": 0.032024
+    },
+    {
+      "conf_esik": 0.395,
+      "eslesen": 43,
+      "yalniz_fp32": 2,
+      "yalniz_int8": 5,
+      "ort_iou": 0.953034,
+      "ort_dconf": 0.016029
+    }
+  ]
+}

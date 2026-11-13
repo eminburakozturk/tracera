@@ -204,7 +204,7 @@ describe("Cloud inference & ORT explain fallback", () => {
       />,
     );
     expect(screen.getByTestId("model-download-notice")).toHaveTextContent(
-      "İlk tespitte model indirilecek (~36 MB)",
+      "~65 MB",
     );
 
     act(() => {
