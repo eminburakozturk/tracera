@@ -1,3 +1,3 @@
 backend,ort_ep,frames,duration_s,avg_fps,rolling_fps,model_ms,dropped_frames,total_boxes
-webgpu,ort-webgpu,78,5.22,14.93,15,51.6,674,236
-wasm,ort-wasm,2,5.22,0.38,0.43,2283.1,752,7
+webgpu,ort-webgpu,84,5.22,16.09,16.91,36,668,257
+wasm,ort-wasm,2,5.22,0.38,0.44,2241.8,753,6
