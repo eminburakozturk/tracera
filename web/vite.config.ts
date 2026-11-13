@@ -7,6 +7,7 @@ import { defineConfig, type Plugin } from "vite";
 function ortAssetsPlugin(): Plugin {
   const ortDist = path.resolve(__dirname, "node_modules/onnxruntime-web/dist");
   const spikeValDir = path.resolve(__dirname, "../web_spike/val_images");
+  const processedValDir = path.resolve(__dirname, "../data/yolo/grouped/val/images");
 
   const mimeMap: Record<string, string> = {
     ".wasm": "application/wasm",
@@ -34,8 +35,14 @@ function ortAssetsPlugin(): Plugin {
         // Parite testi için spike val görüntüleri (yalnız geliştirme/test sunucusu)
         if (cleanUrl.startsWith("/spike-val/")) {
           const fname = path.basename(cleanUrl);
-          const full = path.join(spikeValDir, fname);
-          if (fs.existsSync(full) && fs.statSync(full).isFile()) {
+          const candidates = [
+            path.join(spikeValDir, fname),
+            path.join(processedValDir, fname),
+          ];
+          const full = candidates.find(
+            (p) => fs.existsSync(p) && fs.statSync(p).isFile(),
+          );
+          if (full) {
             res.setHeader("Content-Type", "image/jpeg");
             fs.createReadStream(full).pipe(res);
             return;

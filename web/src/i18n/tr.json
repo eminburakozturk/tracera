@@ -23,7 +23,8 @@
     "serverOffline": "Yerel Sunucu Kapalı",
     "serverChecking": "Kontrol Ediliyor",
     "apiUrlLabel": "API Taban Adresi",
-    "recheck": "Bağlantıyı Denetle"
+    "recheck": "Bağlantıyı Denetle",
+    "parityInfo": "Cihazda (FP32) ve Yerel sunucu (INT8) modelleri sınır değerdeki kutularda küçük farklar gösterebilir."
   },
   "controls": {
     "themeDark": "Koyu Tema",

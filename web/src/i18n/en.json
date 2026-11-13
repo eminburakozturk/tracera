@@ -23,7 +23,8 @@
     "serverOffline": "Local Server Offline",
     "serverChecking": "Checking",
     "apiUrlLabel": "API Base URL",
-    "recheck": "Check Connection"
+    "recheck": "Check Connection",
+    "parityInfo": "On-device (FP32) and Local server (INT8) models may show minor differences on threshold-boundary boxes."
   },
   "controls": {
     "themeDark": "Dark Theme",

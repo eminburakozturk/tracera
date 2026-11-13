@@ -4,6 +4,7 @@ import { AboutView } from "../../src/components/AboutView";
 import { DetectView } from "../../src/components/DetectView";
 import { ExplainView } from "../../src/components/ExplainView";
 import { ResultsView } from "../../src/components/ResultsView";
+import { TopBar } from "../../src/components/TopBar";
 import { METRICS_FALLBACK, VAL_EXAMPLES } from "../../src/fixtures";
 import enJson from "../../src/i18n/en.json";
 import trJson from "../../src/i18n/tr.json";
@@ -79,5 +80,15 @@ describe("Tracera UI components & wording rules", () => {
     for (const pat of FORBIDDEN_PATTERNS) {
       expect(text).not.toMatch(pat);
     }
+  });
+
+  it("renders backend parity info button next to backend selector", () => {
+    render(<TopBar onRecheckHealth={() => {}} ortEnabled />);
+    const infoBtn = screen.getByTestId("backend-parity-info");
+    expect(infoBtn).toBeInTheDocument();
+    expect(infoBtn).toHaveAttribute(
+      "title",
+      "Cihazda (FP32) ve Yerel sunucu (INT8) modelleri sınır değerdeki kutularda küçük farklar gösterebilir.",
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { Cpu, Globe, Moon, RefreshCw, Server, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
+import { Cpu, Globe, Info, Moon, RefreshCw, Server, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -10,6 +10,12 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip";
 import type { BackendChoice } from "../inference/types";
 import { useAppStore, type AppTab } from "../store/useAppStore";
 
@@ -116,25 +122,46 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
         </Tabs>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="w-[178px]">
-            <Select
-              value={backendChoice}
-              onValueChange={(val) => setBackendChoice(val as BackendChoice)}
-            >
-              <SelectTrigger
-                aria-label={t("backend.label")}
-                data-testid="backend-select"
+          <div className="flex items-center gap-1.5">
+            <div className="w-[178px]">
+              <Select
+                value={backendChoice}
+                onValueChange={(val) => setBackendChoice(val as BackendChoice)}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
-                <SelectItem value="api">{t("backend.optApi")}</SelectItem>
-                <SelectItem value="ort" disabled={!ortEnabled}>
-                  {t("backend.optOrt")}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+                <SelectTrigger
+                  aria-label={t("backend.label")}
+                  data-testid="backend-select"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
+                  <SelectItem value="api">{t("backend.optApi")}</SelectItem>
+                  <SelectItem value="ort" disabled={!ortEnabled}>
+                    {t("backend.optOrt")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t("backend.parityInfo")}
+                    title={t("backend.parityInfo")}
+                    data-testid="backend-parity-info"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] cursor-pointer"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs leading-relaxed">
+                  {t("backend.parityInfo")}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           {backendChoice === "api" && (
