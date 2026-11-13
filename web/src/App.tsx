@@ -62,7 +62,8 @@ export function App() {
   const setDetectLoading = useAppStore((s) => s.setDetectLoading);
   const setDetectResult = useAppStore((s) => s.setDetectResult);
   const setDetectError = useAppStore((s) => s.setDetectError);
-  const setExplainLoading = useAppStore((s) => s.setExplainLoading);
+  const startExplainRequest = useAppStore((s) => s.startExplainRequest);
+  const setExplainWaking = useAppStore((s) => s.setExplainWaking);
   const setExplainResult = useAppStore((s) => s.setExplainResult);
   const setExplainError = useAppStore((s) => s.setExplainError);
   const setOrtProgress = useAppStore((s) => s.setOrtProgress);
@@ -70,6 +71,7 @@ export function App() {
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
   React.useEffect(() => {
@@ -162,6 +164,7 @@ export function App() {
   React.useEffect(() => {
     if (prevBackendRef.current !== backendChoice) {
       prevBackendRef.current = backendChoice;
+      explainReqSeqRef.current++;
       setDetectResult(null);
       setExplainResult(null);
       if (backendChoice === "api") {
@@ -233,6 +236,8 @@ export function App() {
     [runDetectWithFile],
   );
 
+  const explainReqSeqRef = React.useRef(0);
+
   const handleRunExplain = React.useCallback(async () => {
     const state = useAppStore.getState();
     const img = state.selectedImage;
@@ -241,8 +246,8 @@ export function App() {
       detections.find((d) => d.id === state.selectedDetectionId) ?? detections[0];
     if (!img || !det) return;
 
-    setExplainLoading(true);
-    setExplainError(null);
+    const reqId = ++explainReqSeqRef.current;
+    startExplainRequest(det.id);
     try {
       const { result, source } = await resolveExplain({
         backendChoice: state.backendChoice,
@@ -252,9 +257,35 @@ export function App() {
         detection: det,
         cloudOnly: !state.localApiAvailable,
         onApiStatusChange: (status, error) => setApiHealth({ status, error }),
+        onCloudWaking: () => {
+          const cur = useAppStore.getState();
+          if (
+            reqId === explainReqSeqRef.current &&
+            cur.selectedDetectionId === det.id &&
+            cur.selectedImage?.file === img.file
+          ) {
+            setExplainWaking();
+          }
+        },
       });
-      setExplainResult(result, source);
+      const cur = useAppStore.getState();
+      if (
+        reqId !== explainReqSeqRef.current ||
+        cur.selectedDetectionId !== det.id ||
+        cur.selectedImage?.file !== img.file
+      ) {
+        return;
+      }
+      setExplainResult(result, source, det.id);
     } catch (err) {
+      const cur = useAppStore.getState();
+      if (
+        reqId !== explainReqSeqRef.current ||
+        cur.selectedDetectionId !== det.id ||
+        cur.selectedImage?.file !== img.file
+      ) {
+        return;
+      }
       if (err instanceof ApiClientError && err.isOffline) {
         setApiHealth({ status: "offline", error: err.message });
         setExplainError(t("detect.apiOfflineError", { url: apiBaseUrl }));
@@ -263,15 +294,14 @@ export function App() {
           err instanceof Error ? err.message : CLOUD_UNAVAILABLE_MESSAGE,
         );
       }
-    } finally {
-      setExplainLoading(false);
     }
   }, [
     apiBaseUrl,
     setApiHealth,
     setExplainError,
-    setExplainLoading,
     setExplainResult,
+    setExplainWaking,
+    startExplainRequest,
     t,
   ]);
 
@@ -279,9 +309,7 @@ export function App() {
     (detId: number) => {
       setSelectedDetectionId(detId);
       setActiveTab("explain");
-      setTimeout(() => {
-        void handleRunExplain();
-      }, 0);
+      void handleRunExplain();
     },
     [handleRunExplain, setActiveTab, setSelectedDetectionId],
   );

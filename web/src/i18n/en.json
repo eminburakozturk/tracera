@@ -72,6 +72,7 @@
     "selectedDet": "Selected Detection",
     "generateBtn": "Generate Heatmap",
     "generating": "Computing LayerCAM...",
+    "wakingCloud": "Cloud server is waking up…",
     "opacityLabel": "Heatmap Opacity",
     "zoomPanel": "Defect Region (Zoomed)",
     "fullPanel": "Full Board Overlay",

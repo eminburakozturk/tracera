@@ -72,6 +72,7 @@
     "selectedDet": "Seçili Tespit",
     "generateBtn": "Isı Haritası Üret",
     "generating": "LayerCAM Hesaplanıyor...",
+    "wakingCloud": "Bulut sunucusu uyanıyor…",
     "opacityLabel": "Harita Opaklığı",
     "zoomPanel": "Kusur Bölgesi (Yakınlaştırılmış)",
     "fullPanel": "Tüm Kart Overlay",

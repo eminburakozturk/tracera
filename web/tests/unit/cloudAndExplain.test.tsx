@@ -1,5 +1,6 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import App from "../../src/App";
 import { DetectView } from "../../src/components/DetectView";
 import { ExplainView } from "../../src/components/ExplainView";
 import { METRICS_FALLBACK } from "../../src/fixtures";
@@ -8,6 +9,8 @@ import {
   CLOUD_UNAVAILABLE_MESSAGE,
   CloudUnavailableError,
   DEFAULT_CLOUD_SPACE,
+  DEFAULT_CLOUD_TIMEOUT_MS,
+  callCloudEndpoint,
 } from "../../src/inference/cloud/CloudClient";
 import { CloudDetector } from "../../src/inference/cloud/CloudDetector";
 import { CloudExplainer } from "../../src/inference/cloud/CloudExplainer";
@@ -205,6 +208,127 @@ describe("Cloud inference & ORT explain fallback", () => {
     expect(screen.getByTestId("explain-cloud-note")).toBeInTheDocument();
     expect(screen.queryByText(/anchor/i)).not.toBeInTheDocument();
     expect(screen.getByText(/seçilen tespitin/i)).toBeInTheDocument();
+  });
+
+  it("sets cloud timeout >= 60s, calls onWaking, and retries once automatically on transient failure", async () => {
+    expect(DEFAULT_CLOUD_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
+
+    let attempts = 0;
+    const predict = vi.fn(async () => ({ data: [fakeExplain] }));
+    const connector = vi.fn(async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw new Error("ZeroGPU cold start 503");
+      }
+      return { predict };
+    });
+    const onWaking = vi.fn();
+
+    const out = await callCloudEndpoint<ExplainResult>(
+      DEFAULT_CLOUD_SPACE,
+      "/explain_api",
+      { box: "0,0,10,10", cls_id: 0 },
+      { connector, retries: 1, retryDelayMs: 0, wakingThresholdMs: 10, onWaking },
+    );
+
+    expect(out).toEqual(fakeExplain);
+    expect(connector).toHaveBeenCalledTimes(2);
+    expect(onWaking).toHaveBeenCalledTimes(1);
+  });
+
+  it("enforces explain state transitions: error->success, success->error, detection change", async () => {
+    const det2: Detection = {
+      id: 2,
+      cls_id: 3,
+      cls: "short",
+      conf: 0.84,
+      box: [10, 20, 40, 60],
+    };
+
+    useAppStore.setState({
+      detectResult: { ...fakeDetect, detections: [sampleDet, det2] },
+      selectedDetectionId: 1,
+      explainResult: null,
+      explainSource: null,
+      explainDetectionId: null,
+      explainStatus: "idle",
+      explainLoading: false,
+      explainError: null,
+    });
+
+    let mode: "fail" | "ok" = "fail";
+    const onRunExplain = vi.fn(async () => {
+      const st = useAppStore.getState();
+      const detId = st.selectedDetectionId ?? 1;
+      st.startExplainRequest(detId);
+      if (mode === "fail") {
+        st.setExplainError(CLOUD_UNAVAILABLE_MESSAGE);
+      } else {
+        st.setExplainResult(fakeExplain, "cloud", detId);
+      }
+    });
+
+    render(<ExplainView onRunExplain={onRunExplain} />);
+
+    // 1) error -> success: hata önce banner açar, yeni başarılı istekte hata kaybolur
+    await act(async () => {
+      await onRunExplain();
+    });
+    expect(screen.getByTestId("explain-error-banner")).toHaveTextContent(
+      CLOUD_UNAVAILABLE_MESSAGE,
+    );
+    expect(screen.queryByTestId("explain-overlay-img")).not.toBeInTheDocument();
+
+    mode = "ok";
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-heatmap-btn"));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("explain-overlay-img")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("explain-error-banner")).not.toBeInTheDocument();
+    expect(screen.getByTestId("explain-detection-badge")).toHaveTextContent(
+      "#1 · missing_hole",
+    );
+
+    // 2) success -> error: hata oluşunca eski harita kaldırılır (aynı anda görünmez)
+    mode = "fail";
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-heatmap-btn"));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("explain-error-banner")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("explain-overlay-img")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("explain-detection-badge")).not.toBeInTheDocument();
+
+    // Tekrar başarı + 3) tespit değişimi: eski tespitin haritası ve hatası temizlenir
+    mode = "ok";
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("generate-heatmap-btn"));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("explain-overlay-img")).toBeInTheDocument();
+    });
+
+    act(() => {
+      useAppStore.getState().setSelectedDetectionId(2);
+    });
+    expect(screen.queryByTestId("explain-overlay-img")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("explain-error-banner")).not.toBeInTheDocument();
+
+    // Waking ara durumu UI metnini doğrula
+    act(() => {
+      useAppStore.getState().startExplainRequest(2);
+      useAppStore.getState().setExplainWaking();
+    });
+    expect(screen.getByTestId("explain-status-banner")).toHaveTextContent(
+      "Bulut sunucusu uyanıyor…",
+    );
+  });
+
+  it("App reference stays importable without side effects in explain state tests", () => {
+    expect(typeof App).toBe("function");
   });
 
   it("shows first-detect model download notice only when ORT model is uncached", () => {

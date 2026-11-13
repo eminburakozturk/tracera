@@ -1,4 +1,5 @@
 import path from "node:path";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 // 1x1 transparent PNG base64
@@ -209,5 +210,81 @@ test.describe("CI Mock & Route E2E (WebGPU / Python API bağımsız)", () => {
       fullPage: false,
     });
     await context.close();
+  });
+
+  test("Açık tema (prefers-color-scheme: light) masaüstü + mobil ekran görüntüsü ve axe WCAG AA kontrast denetimi", async ({
+    browser,
+  }) => {
+    const assertNoContrastViolations = async (
+      page: import("@playwright/test").Page,
+      label: string,
+    ) => {
+      const results = await new AxeBuilder({ page })
+        .withRules(["color-contrast"])
+        .analyze();
+      expect(
+        results.violations,
+        `WCAG AA color-contrast violations on ${label}: ${JSON.stringify(results.violations, null, 2)}`,
+      ).toEqual([]);
+    };
+
+    // 1. Desktop Light (1440x900, prefers-color-scheme: light)
+    const desktopCtx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      colorScheme: "light",
+    });
+    const dPage = await desktopCtx.newPage();
+    await dPage.goto("/");
+
+    const isDarkDesktop = await dPage.evaluate(() =>
+      document.documentElement.classList.contains("dark"),
+    );
+    expect(isDarkDesktop).toBe(false);
+
+    await dPage.getByTestId("backend-select").click();
+    await dPage.getByRole("option", { name: /Mock/i }).click();
+    await dPage.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
+
+    await assertNoContrastViolations(dPage, "light-desktop-detect");
+    await dPage.screenshot({
+      path: path.resolve(process.cwd(), "../results/ui_light_desktop.png"),
+      fullPage: true,
+    });
+
+    await dPage.getByTestId("explain-det-0").click();
+    await expect(dPage.getByTestId("explain-overlay-img")).toBeVisible({ timeout: 15_000 });
+    await assertNoContrastViolations(dPage, "light-desktop-explain");
+
+    await dPage.getByTestId("tab-results").click();
+    await expect(dPage.getByRole("heading", { level: 2 }).first()).toBeVisible();
+    await assertNoContrastViolations(dPage, "light-desktop-results");
+
+    await dPage.getByTestId("tab-about").click();
+    await assertNoContrastViolations(dPage, "light-desktop-about");
+    await desktopCtx.close();
+
+    // 2. Mobile Light (390x844, prefers-color-scheme: light)
+    const mobileCtx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      colorScheme: "light",
+    });
+    const mPage = await mobileCtx.newPage();
+    await mPage.goto("/");
+
+    const isDarkMobile = await mPage.evaluate(() =>
+      document.documentElement.classList.contains("dark"),
+    );
+    expect(isDarkMobile).toBe(false);
+
+    await mPage.getByTestId("backend-select").click();
+    await mPage.getByRole("option", { name: /Mock/i }).click();
+    await mPage.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
+
+    await assertNoContrastViolations(mPage, "light-mobile-detect");
+    await mPage.screenshot({
+      path: path.resolve(process.cwd(), "../results/ui_light_mobile.png"),
+      fullPage: true,
+    });
+    await mobileCtx.close();
   });
 });

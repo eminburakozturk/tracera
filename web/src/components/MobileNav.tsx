@@ -33,7 +33,7 @@ export function MobileNav() {
             className={cn(
               "flex min-h-[52px] flex-col items-center justify-center gap-0.5 px-2 py-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]",
               active
-                ? "text-[var(--accent)]"
+                ? "text-[var(--accent-ink)]"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)]",
             )}
             aria-current={active ? "page" : undefined}

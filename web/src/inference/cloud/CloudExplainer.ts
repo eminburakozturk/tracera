@@ -6,21 +6,16 @@ import {
   DEFAULT_CLOUD_SPACE,
   callCloudEndpoint,
   prepareGradioFile,
-  type CloudConnector,
+  type CloudCallOptions,
 } from "./CloudClient";
 
 export class CloudExplainer implements Explainer {
   private readonly spaceId: string;
-  private readonly connector?: CloudConnector;
-  private readonly timeoutMs?: number;
+  private readonly options?: CloudCallOptions;
 
-  constructor(
-    spaceId = DEFAULT_CLOUD_SPACE,
-    options?: { connector?: CloudConnector; timeoutMs?: number },
-  ) {
+  constructor(spaceId = DEFAULT_CLOUD_SPACE, options?: CloudCallOptions) {
     this.spaceId = spaceId.trim() || DEFAULT_CLOUD_SPACE;
-    this.connector = options?.connector;
-    this.timeoutMs = options?.timeoutMs;
+    this.options = options;
   }
 
   async explain(file: File, det: Detection): Promise<ExplainResult> {
@@ -33,7 +28,7 @@ export class CloudExplainer implements Explainer {
         box: boxParam,
         cls_id: det.cls_id,
       },
-      { connector: this.connector, timeoutMs: this.timeoutMs },
+      this.options,
     );
 
     if (

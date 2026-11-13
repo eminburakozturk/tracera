@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, Flame, Info } from "lucide-react";
+import { AlertTriangle, Download, Flame, Info, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { downloadBase64Png } from "../lib/download";
 import { useAppStore } from "../store/useAppStore";
@@ -36,6 +36,8 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
   const setSelectedDetectionId = useAppStore((s) => s.setSelectedDetectionId);
   const explainResult = useAppStore((s) => s.explainResult);
   const explainSource = useAppStore((s) => s.explainSource);
+  const explainDetectionId = useAppStore((s) => s.explainDetectionId);
+  const explainStatus = useAppStore((s) => s.explainStatus);
   const cloudSpaceId = useAppStore((s) => s.cloudSpaceId);
   const explainLoading = useAppStore((s) => s.explainLoading);
   const explainError = useAppStore((s) => s.explainError);
@@ -52,6 +54,17 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
   const detections = detectResult?.detections ?? [];
   const selectedDet =
     detections.find((d) => d.id === selectedDetectionId) ?? detections[0] ?? null;
+
+  const hasMatchingExplain = Boolean(
+    !explainLoading &&
+      !explainError &&
+      explainStatus !== "error" &&
+      explainResult &&
+      selectedImage &&
+      selectedDet &&
+      (explainDetectionId === null || explainDetectionId === selectedDet.id),
+  );
+  const showErrorBanner = Boolean(!explainLoading && explainError && explainStatus !== "success");
 
   const layercamRow =
     metrics?.xai.find(
@@ -72,8 +85,11 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
             <div>
               <CardTitle>{t("explain.title")}</CardTitle>
             </div>
-            {explainResult && (
+            {hasMatchingExplain && explainResult && selectedDet && (
               <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" data-testid="explain-detection-badge">
+                  #{selectedDet.id} · {selectedDet.cls} ({(selectedDet.conf * 100).toFixed(1)}%)
+                </Badge>
                 {explainSource && (
                   <Badge variant="secondary" data-testid="explain-source-badge">
                     {t("explain.sourceLabel")}: {renderExplainSourceLabel()}
@@ -158,7 +174,9 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
                   <Flame className="h-4 w-4" />
                   <span>
                     {explainLoading
-                      ? t("explain.generating")
+                      ? explainStatus === "waking"
+                        ? t("explain.wakingCloud")
+                        : t("explain.generating")
                       : t("explain.generateBtn")}
                   </span>
                 </Button>
@@ -166,11 +184,11 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
             </div>
           )}
 
-          {explainError && (
+          {showErrorBanner && (
             <div
               role="alert"
               data-testid="explain-error-banner"
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-700 dark:text-rose-200"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-800 dark:text-rose-200"
             >
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -188,13 +206,27 @@ export function ExplainView({ onRunExplain }: ExplainViewProps) {
           )}
 
           {explainLoading && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Skeleton className="h-72 w-full" />
-              <Skeleton className="h-72 w-full" />
+            <div className="space-y-3" data-testid="explain-loading-state">
+              <div
+                role="status"
+                data-testid="explain-status-banner"
+                className="flex items-center gap-2 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] p-3 text-xs font-medium text-[var(--accent-ink)]"
+              >
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--accent)]" />
+                <span>
+                  {explainStatus === "waking"
+                    ? t("explain.wakingCloud")
+                    : t("explain.generating")}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Skeleton className="h-72 w-full" />
+                <Skeleton className="h-72 w-full" />
+              </div>
             </div>
           )}
 
-          {!explainLoading && explainResult && selectedImage && selectedDet && (
+          {hasMatchingExplain && explainResult && selectedImage && selectedDet && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Card className="overflow-hidden">
                 <CardHeader className="flex flex-row items-center justify-between py-3">

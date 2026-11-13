@@ -595,10 +595,10 @@ export function DetectView({
                 <button
                   type="button"
                   onClick={() => setClassFilter("all")}
-                  className={cn(
+                    className={cn(
                     "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
                     classFilter === "all"
-                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]"
+                      ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-ink)]"
                       : "border-[var(--border-hairline)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
                   )}
                 >

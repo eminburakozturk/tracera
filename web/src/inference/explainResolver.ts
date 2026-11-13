@@ -13,6 +13,7 @@ export interface ExplainResolveOptions {
   detection: Detection;
   cloudOnly?: boolean;
   onApiStatusChange?: (status: "online" | "offline", error?: string) => void;
+  onCloudWaking?: () => void;
   factories?: {
     mock?: () => Explainer;
     api?: (baseUrl: string) => Explainer;
@@ -30,7 +31,9 @@ export async function resolveExplain(
 ): Promise<ExplainResolved> {
   const mkMock = opts.factories?.mock ?? (() => new MockExplainer());
   const mkApi = opts.factories?.api ?? ((url) => new ApiExplainer(url));
-  const mkCloud = opts.factories?.cloud ?? ((id) => new CloudExplainer(id));
+  const mkCloud =
+    opts.factories?.cloud ??
+    ((id) => new CloudExplainer(id, { onWaking: opts.onCloudWaking }));
 
   if (opts.backendChoice === "mock") {
     return {

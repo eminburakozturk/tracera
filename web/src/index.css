@@ -1,24 +1,28 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   :root {
-    --bg-canvas: #f4f6fa;
+    color-scheme: light;
+    --bg-canvas: #eef2f6;
     --bg-surface: #ffffff;
-    --bg-elevated: #eef2f7;
-    --bg-subtle: #e2e8f0;
-    --border-hairline: #cbd5e1;
-    --border-strong: #94a3b8;
+    --bg-elevated: #f1f5f9;
+    --bg-subtle: #cbd5e1;
+    --border-hairline: #94a3b8;
+    --border-strong: #64748b;
     --text-primary: #0f172a;
-    --text-secondary: #334155;
-    --text-muted: #475569;
-    --accent: #0284c7;
-    --accent-hover: #0369a1;
+    --text-secondary: #1e293b;
+    --text-muted: #334155;
+    --accent: #0369a1;
+    --accent-hover: #075985;
     --accent-contrast: #ffffff;
-    --accent-soft: rgba(2, 132, 199, 0.12);
-    --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06), 0 6px 20px rgba(15, 23, 42, 0.05);
+    --accent-soft: #e0f2fe;
+    --accent-ink: #075985;
+    --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.1), 0 6px 20px rgba(15, 23, 42, 0.08);
   }
 
   .dark {
+    color-scheme: dark;
     --bg-canvas: #090d14;
     --bg-surface: #101722;
     --bg-elevated: #161f2e;
@@ -32,6 +36,7 @@
     --accent-hover: #7dd3fc;
     --accent-contrast: #06131f;
     --accent-soft: rgba(56, 189, 248, 0.14);
+    --accent-ink: #7dd3fc;
     --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.35);
   }
 

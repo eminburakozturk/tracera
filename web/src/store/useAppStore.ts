@@ -16,6 +16,16 @@ import type {
 export type AppTab = "detect" | "live" | "explain" | "results" | "about";
 export type ThemeMode = "dark" | "light";
 export type LangCode = "tr" | "en";
+export type ExplainStatus = "idle" | "loading" | "waking" | "success" | "error";
+
+export function getInitialTheme(): ThemeMode {
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+      return "light";
+    }
+  }
+  return "dark";
+}
 
 export interface SelectedImageState {
   file: File;
@@ -52,6 +62,8 @@ interface AppState {
 
   explainResult: ExplainResult | null;
   explainSource: ExplainSource | null;
+  explainDetectionId: number | null;
+  explainStatus: ExplainStatus;
   explainLoading: boolean;
   explainError: string | null;
   heatmapOpacity: number;
@@ -85,7 +97,13 @@ interface AppState {
   setSelectedDetectionId: (id: number | null) => void;
 
   setExplainLoading: (loading: boolean) => void;
-  setExplainResult: (res: ExplainResult | null, source?: ExplainSource | null) => void;
+  startExplainRequest: (detectionId: number) => void;
+  setExplainWaking: () => void;
+  setExplainResult: (
+    res: ExplainResult | null,
+    source?: ExplainSource | null,
+    detectionId?: number | null,
+  ) => void;
   setExplainError: (err: string | null) => void;
   setHeatmapOpacity: (opacity: number) => void;
 
@@ -102,7 +120,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   activeTab: "detect",
-  theme: "dark",
+  theme: getInitialTheme(),
   lang: "tr",
   backendChoice: "ort",
   apiBaseUrl: DEFAULT_API_BASE_URL,
@@ -123,6 +141,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   explainResult: null,
   explainSource: null,
+  explainDetectionId: null,
+  explainStatus: "idle",
   explainLoading: false,
   explainError: null,
   heatmapOpacity: 0.72,
@@ -159,6 +179,9 @@ export const useAppStore = create<AppState>((set) => ({
         selectedDetectionId: null,
         explainResult: null,
         explainSource: null,
+        explainDetectionId: null,
+        explainStatus: "idle",
+        explainLoading: false,
         explainError: null,
       };
     }),
@@ -171,15 +194,65 @@ export const useAppStore = create<AppState>((set) => ({
       detectError: null,
       selectedDetectionId:
         detectResult && detectResult.detections.length > 0 ? detectResult.detections[0].id : null,
+      explainResult: null,
+      explainSource: null,
+      explainDetectionId: null,
+      explainStatus: "idle",
+      explainLoading: false,
+      explainError: null,
     }),
   setDetectError: (detectError) => set({ detectError }),
   setSelectedDetectionId: (selectedDetectionId) =>
-    set({ selectedDetectionId, explainResult: null, explainSource: null, explainError: null }),
+    set({
+      selectedDetectionId,
+      explainResult: null,
+      explainSource: null,
+      explainDetectionId: null,
+      explainStatus: "idle",
+      explainLoading: false,
+      explainError: null,
+    }),
 
-  setExplainLoading: (explainLoading) => set({ explainLoading }),
-  setExplainResult: (explainResult, explainSource = null) =>
-    set({ explainResult, explainSource, explainError: null }),
-  setExplainError: (explainError) => set({ explainError }),
+  setExplainLoading: (explainLoading) =>
+    set((prev) => ({
+      explainLoading,
+      explainStatus: explainLoading ? prev.explainStatus === "waking" ? "waking" : "loading" : prev.explainStatus,
+    })),
+  startExplainRequest: (detectionId) =>
+    set({
+      explainLoading: true,
+      explainStatus: "loading",
+      explainError: null,
+      explainResult: null,
+      explainSource: null,
+      explainDetectionId: detectionId,
+    }),
+  setExplainWaking: () =>
+    set((prev) => (prev.explainLoading ? { explainStatus: "waking" } : prev)),
+  setExplainResult: (explainResult, explainSource = null, detectionId = null) =>
+    set({
+      explainResult,
+      explainSource,
+      explainDetectionId: explainResult ? detectionId : null,
+      explainLoading: false,
+      explainError: null,
+      explainStatus: explainResult ? "success" : "idle",
+    }),
+  setExplainError: (explainError) =>
+    set(
+      explainError
+        ? {
+            explainError,
+            explainLoading: false,
+            explainStatus: "error",
+            explainResult: null,
+            explainSource: null,
+            explainDetectionId: null,
+          }
+        : {
+            explainError: null,
+          },
+    ),
   setHeatmapOpacity: (heatmapOpacity) => set({ heatmapOpacity }),
 
   setOrtProgress: (ortProgress) => set({ ortProgress }),
