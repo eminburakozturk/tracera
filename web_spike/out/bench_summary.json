@@ -1,0 +1,37 @@
+{
+  "gpuInfo": {
+    "available": true,
+    "info": {
+      "vendor": "nvidia",
+      "arch": "lovelace",
+      "device": "",
+      "desc": ""
+    }
+  },
+  "summary": [
+    {
+      "pref": "webgpu",
+      "modelFile": "tracera_1024.onnx",
+      "status": "error",
+      "error": "TypeError: Cannot read properties of undefined (reading 'benchmarkAll')\n    at <anonymous>:1:23"
+    },
+    {
+      "pref": "webgpu",
+      "modelFile": "tracera_1024_int8.onnx",
+      "status": "error",
+      "error": "TypeError: Cannot read properties of undefined (reading 'benchmarkAll')\n    at <anonymous>:1:23"
+    },
+    {
+      "pref": "wasm",
+      "modelFile": "tracera_1024.onnx",
+      "status": "error",
+      "error": "TypeError: Cannot read properties of undefined (reading 'benchmarkAll')\n    at <anonymous>:1:23"
+    },
+    {
+      "pref": "wasm",
+      "modelFile": "tracera_1024_int8.onnx",
+      "status": "error",
+      "error": "TypeError: Cannot read properties of undefined (reading 'benchmarkAll')\n    at <anonymous>:1:23"
+    }
+  ]
+}

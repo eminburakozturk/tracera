@@ -1,0 +1,5 @@
+backend,model,boyut_mb,medyan_ms,eşleşme_oranı,ort_iou,ort_dconf
+ort-webgpu,FP32 ONNX,36.43,36.05,0.9,0.9908,0.001589
+ort-webgpu,INT8 Dynamic ONNX,9.64,,,,
+ort-wasm,FP32 ONNX,36.43,689.41,0.9,0.9908,0.001589
+ort-wasm,INT8 Dynamic ONNX,9.64,607.61,0.7,0.9669,0.013039

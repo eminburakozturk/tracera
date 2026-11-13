@@ -1,0 +1,61 @@
+{
+  "width": 2544,
+  "height": 2156,
+  "detections": [
+    {
+      "id": 0,
+      "cls": "spurious_copper",
+      "cls_id": 5,
+      "conf": 0.824236,
+      "box": [
+        601.411,
+        590.627,
+        766.469,
+        657.184
+      ]
+    },
+    {
+      "id": 1,
+      "cls": "spurious_copper",
+      "cls_id": 5,
+      "conf": 0.80397,
+      "box": [
+        1509.409,
+        653.377,
+        1600.718,
+        713.232
+      ]
+    },
+    {
+      "id": 2,
+      "cls": "spurious_copper",
+      "cls_id": 5,
+      "conf": 0.781017,
+      "box": [
+        1926.136,
+        1348.425,
+        2021.58,
+        1395.876
+      ]
+    },
+    {
+      "id": 3,
+      "cls": "spurious_copper",
+      "cls_id": 5,
+      "conf": 0.740669,
+      "box": [
+        2110.495,
+        1630.877,
+        2155.068,
+        1698.668
+      ]
+    }
+  ],
+  "timing": {
+    "pre_ms": 6.41,
+    "model_ms": 502.044,
+    "post_ms": 0.804,
+    "total_ms": 509.258
+  },
+  "backend": "pytorch"
+}

@@ -1,0 +1,49 @@
+{
+  "width": 2544,
+  "height": 2156,
+  "detections": [
+    {
+      "id": 0,
+      "cls": "open_circuit",
+      "cls_id": 2,
+      "conf": 0.804865,
+      "box": [
+        456.743,
+        626.464,
+        516.487,
+        679.948
+      ]
+    },
+    {
+      "id": 1,
+      "cls": "open_circuit",
+      "cls_id": 2,
+      "conf": 0.788461,
+      "box": [
+        1584.229,
+        626.907,
+        1638.41,
+        677.423
+      ]
+    },
+    {
+      "id": 2,
+      "cls": "open_circuit",
+      "cls_id": 2,
+      "conf": 0.786953,
+      "box": [
+        877.866,
+        850.865,
+        943.154,
+        911.581
+      ]
+    }
+  ],
+  "timing": {
+    "pre_ms": 7.555,
+    "model_ms": 522.917,
+    "post_ms": 0.779,
+    "total_ms": 531.251
+  },
+  "backend": "pytorch"
+}
