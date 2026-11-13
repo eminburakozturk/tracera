@@ -27,7 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Paketleme Kaynak Yolları
 # -----------------------------------------------------------------------------
 SRC_APP = REPO_ROOT / "app" / "app.py"
+SRC_CORE = REPO_ROOT / "tracera_core"
 SRC_GRADCAM = REPO_ROOT / "scripts" / "gradcam.py"
+SRC_META = REPO_ROOT / "web" / "public" / "models" / "meta.json"
 SRC_WEIGHTS_PT = REPO_ROOT / "runs" / "detect" / "g_y11s_1024_full" / "weights" / "last.pt"
 SRC_WEIGHTS_OV = REPO_ROOT / "runs" / "detect" / "g_y11s_1024_full" / "weights" / "last_int8_openvino_model"
 SRC_EXAMPLES_DIR = REPO_ROOT / "app" / "examples"
@@ -91,19 +93,30 @@ def build_space(output_dir: Path) -> dict[str, object]:
 
     # 1. Dizin hiyerarşisi
     xai_dir = output_dir / "tracera_xai"
+    scripts_dir = output_dir / "scripts"
     weights_dir = output_dir / "weights"
     examples_dir = output_dir / "examples"
     results_dir = output_dir / "results"
 
-    for d in (xai_dir, weights_dir, examples_dir, results_dir):
+    for d in (xai_dir, scripts_dir, weights_dir, examples_dir, results_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    # 2. app.py
-    print("📄 [build_space] app.py kopyalanıyor...")
+    # 2. app.py ve tracera_core/
+    print("📄 [build_space] app.py ve tracera_core/ kopyalanıyor...")
     shutil.copy2(SRC_APP, output_dir / "app.py")
+    shutil.copytree(
+        SRC_CORE,
+        output_dir / "tracera_core",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    if SRC_META.is_file():
+        meta_dst = output_dir / "web" / "public" / "models" / "meta.json"
+        meta_dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SRC_META, meta_dst)
 
-    # 3. tracera_xai/gradcam.py ve __init__.py
-    print("🔬 [build_space] tracera_xai modülü oluşturuluyor...")
+    # 3. scripts/gradcam.py ve tracera_xai/gradcam.py
+    print("🔬 [build_space] scripts/gradcam.py ve tracera_xai modülü oluşturuluyor...")
+    shutil.copy2(SRC_GRADCAM, scripts_dir / "gradcam.py")
     shutil.copy2(SRC_GRADCAM, xai_dir / "gradcam.py")
     init_content = (
         '"""Tracera Açıklanabilir Yapay Zeka (XAI) Modülü."""\n'
@@ -237,6 +250,8 @@ BASE_DIR = Path('.').resolve()
 print(f'[TestRunner] Çalışma dizini: {BASE_DIR}')
 assert (BASE_DIR / 'weights' / 'last.pt').is_file(), 'last.pt eksik!'
 assert (BASE_DIR / 'weights' / 'last_int8_openvino_model').is_dir(), 'OpenVINO modeli eksik!'
+assert (BASE_DIR / 'tracera_core' / '__init__.py').is_file(), 'tracera_core eksik!'
+assert (BASE_DIR / 'scripts' / 'gradcam.py').is_file(), 'scripts/gradcam.py eksik!'
 assert (BASE_DIR / 'tracera_xai' / 'gradcam.py').is_file(), 'gradcam.py eksik!'
 
 # app modülünü doğrudan izole dizinden import et

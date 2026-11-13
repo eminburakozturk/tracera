@@ -16,7 +16,13 @@ def get_repo_root() -> Path:
 
 
 REPO_ROOT = get_repo_root()
-WEIGHTS_DIR = REPO_ROOT / "runs" / "detect" / "g_y11s_1024_full" / "weights"
+_SPACE_WEIGHTS = REPO_ROOT / "weights"
+_RUN_WEIGHTS = REPO_ROOT / "runs" / "detect" / "g_y11s_1024_full" / "weights"
+WEIGHTS_DIR = (
+    _SPACE_WEIGHTS
+    if ((_SPACE_WEIGHTS / "last.pt").is_file() or (_SPACE_WEIGHTS / "last_int8_openvino_model").is_dir())
+    else _RUN_WEIGHTS
+)
 OPENVINO_MODEL_PATH = WEIGHTS_DIR / "last_int8_openvino_model"
 PYTORCH_MODEL_PATH = WEIGHTS_DIR / "last.pt"
 META_PATH = REPO_ROOT / "web" / "public" / "models" / "meta.json"

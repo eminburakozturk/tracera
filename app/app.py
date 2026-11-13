@@ -9,10 +9,13 @@ Gradio tabanlı etkileşimli arayüz:
 
 from __future__ import annotations
 
+import base64
+import math
 import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 try:
     import spaces
@@ -33,109 +36,39 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import torch
+from gradio.data_classes import FileData
 
 BASE_DIR = Path(__file__).resolve().parent
 
 DEFAULT_IOU = 0.50
 
-# Hugging Face Space düzeni (izole paket) veya repo düzeni (tracera_core) tespiti
-if (BASE_DIR / "weights").exists() and (BASE_DIR / "tracera_xai").exists():
-    from ultralytics import YOLO
+# HF Space paketi (BASE_DIR == space/) veya repo düzeni için tracera_core kökü
+ROOT_CANDIDATE = BASE_DIR if (BASE_DIR / "tracera_core").is_dir() else BASE_DIR.parent
+if str(ROOT_CANDIDATE) not in sys.path:
+    sys.path.insert(0, str(ROOT_CANDIDATE))
 
-    WEIGHTS_DIR = BASE_DIR / "weights"
-    EXAMPLES_DIR = BASE_DIR / "examples"
-    RESULTS_DIR = BASE_DIR / "results"
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
-    from tracera_xai.gradcam import (
-        MultiLayerYoloCAM,
-        box_orig_to_lb,
-        letterbox_image,
-        make_overlay_and_zoom,
-    )
+EXAMPLES_DIR = BASE_DIR / "examples"
+RESULTS_DIR = (BASE_DIR / "results") if (BASE_DIR / "results").is_dir() else (ROOT_CANDIDATE / "results")
 
-    OPENVINO_MODEL_PATH = WEIGHTS_DIR / "last_int8_openvino_model"
-    PYTORCH_MODEL_PATH = WEIGHTS_DIR / "last.pt"
-    IMGSZ = 1024
-    DEFAULT_CONF = 0.395
-    CLASS_NAMES = {
-        0: "missing_hole",
-        1: "mouse_bite",
-        2: "open_circuit",
-        3: "short",
-        4: "spur",
-        5: "spurious_copper",
-    }
-    CLASS_COLORS = {
-        0: (230, 25, 75),    # Kırmızımsı
-        1: (60, 180, 75),    # Yeşil
-        2: (255, 225, 25),   # Sarı
-        3: (0, 130, 200),    # Mavi
-        4: (245, 130, 48),   # Turuncu
-        5: (145, 30, 180),   # Mor
-    }
-
-    class ModelManager:
-        """HF Space paketi için yerel ModelManager yedeği."""
-
-        def __init__(self) -> None:
-            self.detect_model: YOLO | None = None
-            self.detect_engine_name: str = ""
-            self.pt_model: YOLO | None = None
-            self.cam_engine: MultiLayerYoloCAM | None = None
-
-        def get_detector(self) -> tuple[YOLO, str]:
-            if self.detect_model is None:
-                if OPENVINO_MODEL_PATH.exists():
-                    print(f"[ModelManager] OpenVINO INT8 modeli yükleniyor: {OPENVINO_MODEL_PATH}")
-                    self.detect_model = YOLO(str(OPENVINO_MODEL_PATH), task="detect")
-                    self.detect_engine_name = "OpenVINO INT8 (CPU Optimized)"
-                elif PYTORCH_MODEL_PATH.exists():
-                    print(f"[ModelManager] PyTorch modeli yükleniyor: {PYTORCH_MODEL_PATH}")
-                    self.detect_model = YOLO(str(PYTORCH_MODEL_PATH))
-                    self.detect_engine_name = "PyTorch FP32 (last.pt)"
-                else:
-                    raise FileNotFoundError(
-                        f"Ne OpenVINO ({OPENVINO_MODEL_PATH}) ne de PyTorch ({PYTORCH_MODEL_PATH}) bulundu!"
-                    )
-            return self.detect_model, self.detect_engine_name
-
-        def get_cam_engine(self) -> MultiLayerYoloCAM:
-            if self.cam_engine is None:
-                if not PYTORCH_MODEL_PATH.exists():
-                    raise FileNotFoundError(f"LayerCAM için PyTorch modeli bulunamadı: {PYTORCH_MODEL_PATH}")
-                print(f"[ModelManager] LayerCAM motoru yükleniyor: {PYTORCH_MODEL_PATH} (device=cpu)")
-                self.pt_model = YOLO(str(PYTORCH_MODEL_PATH))
-                self.cam_engine = MultiLayerYoloCAM(
-                    nn_model=self.pt_model.model,
-                    layer_indices=[4],
-                    imgsz=IMGSZ,
-                    device="cpu",
-                )
-            return self.cam_engine
-
-    MODELS = ModelManager()
-else:
-    REPO_ROOT = BASE_DIR.parent
-    EXAMPLES_DIR = BASE_DIR / "examples"
-    RESULTS_DIR = REPO_ROOT / "results"
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
-    from tracera_core import (  # noqa: E402
-        CLASS_COLORS,
-        CLASS_NAMES,
-        DEFAULT_CONF,
-        IMGSZ,
-        MODELS,
-        OPENVINO_MODEL_PATH,
-        PYTORCH_MODEL_PATH,
-        WEIGHTS_DIR,
-        ModelManager,
-        MultiLayerYoloCAM,
-        box_orig_to_lb,
-        letterbox_image,
-        make_overlay_and_zoom,
-    )
+from tracera_core import (  # noqa: E402
+    CLASS_COLORS,
+    CLASS_NAMES,
+    DEFAULT_CONF,
+    DEFAULT_IOU_NMS,
+    IMGSZ,
+    MODELS,
+    OPENVINO_MODEL_PATH,
+    PYTORCH_MODEL_PATH,
+    WEIGHTS_DIR,
+    ExplainResult,
+    ModelManager,
+    MultiLayerYoloCAM,
+    box_orig_to_lb,
+    detect_openvino,
+    explain_layercam,
+    letterbox_image,
+    make_overlay_and_zoom,
+)
 
 # -----------------------------------------------------------------------------
 # Dinamik Metrik Yükleyicileri
@@ -483,7 +416,103 @@ def build_app() -> gr.Blocks:
             outputs=[cam_overlay_output, zoom_output, cam_status_box],
         )
 
+        gr.api(detect_api, api_name="detect_api")
+        gr.api(explain_api, api_name="explain_api")
+
     return demo
+
+
+def _decode_api_image_bgr(image: FileData | dict[str, Any] | str) -> np.ndarray:
+    """Gradio API ucuna gelen FileData/yol/base64 görüntüyü BGR ndarray'e çözer."""
+    path_str: str | None = None
+    if isinstance(image, FileData):
+        path_str = image.path
+    elif isinstance(image, dict):
+        path_str = image.get("path") or image.get("url")
+    elif isinstance(image, str):
+        path_str = image
+
+    if not path_str:
+        raise gr.Error("Geçerli bir görüntü dosyası gönderilmedi.")
+
+    if path_str.startswith("data:image") and "," in path_str:
+        b64_payload = path_str.split(",", 1)[1]
+        raw = base64.b64decode(b64_payload)
+        img_bgr = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+    else:
+        img_bgr = cv2.imread(path_str)
+
+    if img_bgr is None or img_bgr.size == 0:
+        raise gr.Error("Görüntü okunamadı; bozuk veya desteklenmeyen biçim.")
+    return img_bgr
+
+
+def _parse_api_box(box: str, img_w: int, img_h: int) -> tuple[float, float, float, float]:
+    parts = [p.strip() for p in box.split(",")]
+    if len(parts) != 4:
+        raise gr.Error("box alanı 'x1,y1,x2,y2' biçiminde 4 sayı olmalıdır.")
+    try:
+        vals = [float(p) for p in parts]
+    except ValueError as exc:
+        raise gr.Error("box koordinatları geçerli sayı olmalıdır.") from exc
+    if any(math.isnan(v) or math.isinf(v) for v in vals):
+        raise gr.Error("box koordinatları sonlu olmalıdır.")
+    x1, y1, x2, y2 = vals
+    x1 = max(0.0, min(x1, float(img_w)))
+    y1 = max(0.0, min(y1, float(img_h)))
+    x2 = max(0.0, min(x2, float(img_w)))
+    y2 = max(0.0, min(y2, float(img_h)))
+    if x2 <= x1 or y2 <= y1:
+        raise gr.Error("box koordinatları geçersiz (x2 > x1 ve y2 > y1 olmalı).")
+    return (x1, y1, x2, y2)
+
+
+def _encode_rgb_png_base64(rgb_img: np.ndarray) -> str:
+    bgr_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+    ok, buf = cv2.imencode(".png", bgr_img)
+    if not ok:
+        raise gr.Error("PNG kodlaması başarısız oldu.")
+    return base64.b64encode(buf.tobytes()).decode("ascii")
+
+
+def detect_api(image: FileData, conf: float = DEFAULT_CONF) -> dict[str, Any]:
+    """CONTRACT §2 DetectResult JSON döndüren arayüzsüz Gradio API ucu."""
+    conf_val = float(conf)
+    if math.isnan(conf_val) or math.isinf(conf_val) or not (0.0 < conf_val <= 1.0):
+        raise gr.Error("conf parametresi (0, 1] aralığında olmalıdır.")
+    img_bgr = _decode_api_image_bgr(image)
+    res = detect_openvino(
+        img_bgr,
+        conf=conf_val,
+        iou_nms=DEFAULT_IOU_NMS,
+        imgsz=IMGSZ,
+        manager=MODELS,
+    )
+    return res.model_dump()
+
+
+def explain_api(image: FileData, box: str, cls_id: int) -> dict[str, Any]:
+    """CONTRACT §2 ExplainResult JSON döndüren arayüzsüz Gradio API ucu (LayerCAM @ katman 4)."""
+    cls_int = int(cls_id)
+    if cls_int not in CLASS_NAMES:
+        raise gr.Error(f"Geçersiz cls_id={cls_int}; beklenen aralık: 0..{len(CLASS_NAMES) - 1}.")
+    img_bgr = _decode_api_image_bgr(image)
+    h, w = img_bgr.shape[:2]
+    box_orig = _parse_api_box(box, img_w=w, img_h=h)
+    overlay_rgb, zoom_rgb, timing = explain_layercam(
+        img_bgr=img_bgr,
+        box_orig=box_orig,
+        cls_id=cls_int,
+        imgsz=IMGSZ,
+        manager=MODELS,
+    )
+    return ExplainResult(
+        overlay_png=_encode_rgb_png_base64(overlay_rgb),
+        zoom_png=_encode_rgb_png_base64(zoom_rgb),
+        method="layercam",
+        layer=4,
+        timing=timing,
+    ).model_dump()
 
 
 if __name__ == "__main__":
