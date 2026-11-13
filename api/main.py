@@ -6,64 +6,51 @@
 
 from __future__ import annotations
 
+import argparse
 import base64
-import json
 import math
+import os
 import sys
-import threading
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
-import torch
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-    REPO_ROOT = Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    # PyInstaller paketinde app/app.py modül düzeyindeki gradio importunu hafifçe atla
-    if "gradio" not in sys.modules:
-        import types
-
-        sys.modules["gradio"] = types.ModuleType("gradio")
-else:
-    REPO_ROOT = Path(__file__).resolve().parent.parent
-
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from app.app import (  # noqa: E402
-    CLASS_COLORS,
-    CLASS_NAMES,
-    DEFAULT_CONF,
-    IMGSZ,
-    MODELS,
-    OPENVINO_MODEL_PATH,
+_REPO_ROOT = (
+    Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+    else Path(__file__).resolve().parent.parent
 )
-from scripts.gradcam import (  # noqa: E402
-    box_orig_to_lb,
-    letterbox_image,
-    make_overlay_and_zoom,
-)
-from api.metrics_loader import build_metrics_payload  # noqa: E402
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from api.schemas import (  # noqa: E402
-    Detection,
     DetectResult,
     ErrorResponse,
     ExplainResult,
     HealthResponse,
     MetricsResponse,
-    Timing,
+)
+from tracera_core import (  # noqa: E402
+    CLASS_NAMES,
+    DEFAULT_CONF,
+    DEFAULT_IOU_NMS,
+    IMGSZ,
+    MODELS,
+    RESULTS_DIR,
+    build_metrics_payload,
+    detect_openvino,
+    explain_layercam,
+    load_meta,
 )
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # CONTRACT §3: 25 MB
-META_PATH = REPO_ROOT / "web" / "public" / "models" / "meta.json"
-RESULTS_DIR = REPO_ROOT / "results"
 
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -71,25 +58,6 @@ ALLOWED_ORIGINS = [
     "http://tauri.localhost",
     "https://tauri.localhost",
 ]
-
-_CAM_LOCK = threading.Lock()
-
-
-def _load_meta() -> dict[str, Any]:
-    if META_PATH.is_file():
-        return json.loads(META_PATH.read_text(encoding="utf-8"))
-    return {
-        "version": "1",
-        "model": "yolo11s",
-        "imgsz": IMGSZ,
-        "conf": DEFAULT_CONF,
-        "iou_nms": 0.7,
-        "classes": [CLASS_NAMES[i] for i in sorted(CLASS_NAMES)],
-    }
-
-
-def _active_detect_backend() -> str:
-    return "openvino-int8" if OPENVINO_MODEL_PATH.exists() else "pytorch"
 
 
 @asynccontextmanager
@@ -102,7 +70,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Tracera Local API",
-    version=_load_meta().get("version", "1"),
+    version=str(load_meta().get("version", "1")),
     lifespan=lifespan,
 )
 
@@ -189,16 +157,15 @@ def _encode_rgb_png_base64(rgb_img: np.ndarray) -> str:
 
 @app.get("/health", response_model=HealthResponse, responses={500: {"model": ErrorResponse}})
 def get_health() -> HealthResponse:
-    meta = _load_meta()
+    meta = load_meta()
     MODELS.get_detector()
     MODELS.get_cam_engine()
-    backends = ["openvino-int8", "pytorch"] if OPENVINO_MODEL_PATH.exists() else ["pytorch"]
     return HealthResponse(
         status="ok",
         model=str(meta.get("model", "yolo11s")),
         version=str(meta.get("version", "1")),
         device="cpu",
-        backends=backends,
+        backends=MODELS.available_backends(),
     )
 
 
@@ -207,64 +174,15 @@ async def post_detect(
     image: UploadFile = File(...),
     conf: float | None = Form(None),
 ) -> DetectResult:
-    meta = _load_meta()
+    meta = load_meta()
     imgsz = int(meta.get("imgsz", IMGSZ))
-    iou_nms = float(meta.get("iou_nms", 0.7))
+    iou_nms = float(meta.get("iou_nms", DEFAULT_IOU_NMS))
     conf_val = float(meta.get("conf", DEFAULT_CONF)) if conf is None else float(conf)
     if math.isnan(conf_val) or math.isinf(conf_val) or not (0.0 < conf_val <= 1.0):
         raise HTTPException(status_code=422, detail="conf parametresi (0, 1] aralığında olmalıdır.")
 
     img_bgr = await _read_and_decode_image(image)
-    h, w = img_bgr.shape[:2]
-
-    detector, _ = MODELS.get_detector()
-    t0 = time.perf_counter()
-    results = detector.predict(
-        source=img_bgr,
-        imgsz=imgsz,
-        conf=conf_val,
-        iou=iou_nms,
-        device="cpu",
-        verbose=False,
-    )
-    wall_ms = (time.perf_counter() - t0) * 1000.0
-    res0 = results[0]
-    speed = getattr(res0, "speed", {}) or {}
-    pre_ms = float(speed.get("preprocess", 0.0))
-    model_ms = float(speed.get("inference", 0.0))
-    post_ms = float(speed.get("postprocess", 0.0))
-    total_ms = pre_ms + model_ms + post_ms if (pre_ms + model_ms + post_ms) > 0.0 else wall_ms
-
-    detections: list[Detection] = []
-    boxes_obj = res0.boxes
-    if boxes_obj is not None and len(boxes_obj) > 0:
-        xyxy_arr = boxes_obj.xyxy.cpu().numpy()
-        conf_arr = boxes_obj.conf.cpu().numpy()
-        cls_arr = boxes_obj.cls.cpu().numpy().astype(int)
-        for idx, (xyxy, c_val, cls_id) in enumerate(zip(xyxy_arr, conf_arr, cls_arr)):
-            cls_int = int(cls_id)
-            detections.append(
-                Detection(
-                    id=idx,
-                    cls=CLASS_NAMES.get(cls_int, f"class_{cls_int}"),
-                    cls_id=cls_int,
-                    conf=round(float(c_val), 6),
-                    box=[round(float(v), 3) for v in xyxy.tolist()],
-                )
-            )
-
-    return DetectResult(
-        width=int(w),
-        height=int(h),
-        detections=detections,
-        timing=Timing(
-            pre_ms=round(pre_ms, 3),
-            model_ms=round(model_ms, 3),
-            post_ms=round(post_ms, 3),
-            total_ms=round(total_ms, 3),
-        ),
-        backend=_active_detect_backend(),
-    )
+    return detect_openvino(img_bgr, conf=conf_val, iou_nms=iou_nms, imgsz=imgsz, manager=MODELS)
 
 
 @app.post("/explain", response_model=ExplainResult, responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse}, 422: {"model": ErrorResponse}})
@@ -283,54 +201,22 @@ async def post_explain(
     h, w = img_bgr.shape[:2]
     box_orig = _parse_box(box, img_w=w, img_h=h)
 
-    meta = _load_meta()
+    meta = load_meta()
     imgsz = int(meta.get("imgsz", IMGSZ))
 
-    t0 = time.perf_counter()
-    lb = letterbox_image(img_bgr, imgsz=imgsz)
-    tensor_x = torch.from_numpy(lb.img_lb).permute(2, 0, 1).float().unsqueeze(0) / 255.0
-    box_lb = box_orig_to_lb(box_orig, lb)
-    t_pre = time.perf_counter()
-
-    cam_engine = MODELS.get_cam_engine()
-    with _CAM_LOCK:
-        raw_out, anchor_xyxy = cam_engine.forward_image(tensor_x)
-        best_anchor = cam_engine.find_best_anchor(box_lb, anchor_xyxy)
-        extracted = cam_engine.backward_and_extract(
-            raw_out=raw_out,
-            anchor_idx=best_anchor,
-            class_id=cls_id,
-            lb=lb,
-            methods=("layercam",),
-        )
-    _win, cam_dict = extracted[4]
-    _cam_lb, cam_orig = cam_dict["layercam"]
-    t_model = time.perf_counter()
-
-    cls_name = CLASS_NAMES[cls_id]
-    box_color_rgb = CLASS_COLORS.get(cls_id, (0, 255, 100))
-    overlay_rgb, zoom_crop_rgb = make_overlay_and_zoom(
+    overlay_rgb, zoom_crop_rgb, timing = explain_layercam(
         img_bgr=img_bgr,
-        cam_orig=cam_orig,
         box_orig=box_orig,
-        label_str=cls_name,
-        box_color_rgb=box_color_rgb,
+        cls_id=cls_id,
+        imgsz=imgsz,
+        manager=MODELS,
     )
-    overlay_b64 = _encode_rgb_png_base64(overlay_rgb)
-    zoom_b64 = _encode_rgb_png_base64(zoom_crop_rgb)
-    t_end = time.perf_counter()
-
     return ExplainResult(
-        overlay_png=overlay_b64,
-        zoom_png=zoom_b64,
+        overlay_png=_encode_rgb_png_base64(overlay_rgb),
+        zoom_png=_encode_rgb_png_base64(zoom_crop_rgb),
         method="layercam",
         layer=4,
-        timing=Timing(
-            pre_ms=round((t_pre - t0) * 1000.0, 3),
-            model_ms=round((t_model - t_pre) * 1000.0, 3),
-            post_ms=round((t_end - t_model) * 1000.0, 3),
-            total_ms=round((t_end - t0) * 1000.0, 3),
-        ),
+        timing=timing,
     )
 
 
@@ -342,4 +228,8 @@ def get_metrics() -> dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8765)
+    parser = argparse.ArgumentParser(description="Tracera yerel FastAPI sunucusu")
+    parser.add_argument("--host", default=os.environ.get("TRACERA_API_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("TRACERA_API_PORT", "8765")))
+    args = parser.parse_args()
+    uvicorn.run(app, host=args.host, port=args.port)

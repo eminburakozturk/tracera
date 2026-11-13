@@ -33,12 +33,15 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import torch
-from ultralytics import YOLO
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Hugging Face Space düzeni (kendi kendine yeten paket yapısı) veya repo düzeni tespiti
+DEFAULT_IOU = 0.50
+
+# Hugging Face Space düzeni (izole paket) veya repo düzeni (tracera_core) tespiti
 if (BASE_DIR / "weights").exists() and (BASE_DIR / "tracera_xai").exists():
+    from ultralytics import YOLO
+
     WEIGHTS_DIR = BASE_DIR / "weights"
     EXAMPLES_DIR = BASE_DIR / "examples"
     RESULTS_DIR = BASE_DIR / "results"
@@ -50,46 +53,89 @@ if (BASE_DIR / "weights").exists() and (BASE_DIR / "tracera_xai").exists():
         letterbox_image,
         make_overlay_and_zoom,
     )
+
+    OPENVINO_MODEL_PATH = WEIGHTS_DIR / "last_int8_openvino_model"
+    PYTORCH_MODEL_PATH = WEIGHTS_DIR / "last.pt"
+    IMGSZ = 1024
+    DEFAULT_CONF = 0.395
+    CLASS_NAMES = {
+        0: "missing_hole",
+        1: "mouse_bite",
+        2: "open_circuit",
+        3: "short",
+        4: "spur",
+        5: "spurious_copper",
+    }
+    CLASS_COLORS = {
+        0: (230, 25, 75),    # Kırmızımsı
+        1: (60, 180, 75),    # Yeşil
+        2: (255, 225, 25),   # Sarı
+        3: (0, 130, 200),    # Mavi
+        4: (245, 130, 48),   # Turuncu
+        5: (145, 30, 180),   # Mor
+    }
+
+    class ModelManager:
+        """HF Space paketi için yerel ModelManager yedeği."""
+
+        def __init__(self) -> None:
+            self.detect_model: YOLO | None = None
+            self.detect_engine_name: str = ""
+            self.pt_model: YOLO | None = None
+            self.cam_engine: MultiLayerYoloCAM | None = None
+
+        def get_detector(self) -> tuple[YOLO, str]:
+            if self.detect_model is None:
+                if OPENVINO_MODEL_PATH.exists():
+                    print(f"[ModelManager] OpenVINO INT8 modeli yükleniyor: {OPENVINO_MODEL_PATH}")
+                    self.detect_model = YOLO(str(OPENVINO_MODEL_PATH), task="detect")
+                    self.detect_engine_name = "OpenVINO INT8 (CPU Optimized)"
+                elif PYTORCH_MODEL_PATH.exists():
+                    print(f"[ModelManager] PyTorch modeli yükleniyor: {PYTORCH_MODEL_PATH}")
+                    self.detect_model = YOLO(str(PYTORCH_MODEL_PATH))
+                    self.detect_engine_name = "PyTorch FP32 (last.pt)"
+                else:
+                    raise FileNotFoundError(
+                        f"Ne OpenVINO ({OPENVINO_MODEL_PATH}) ne de PyTorch ({PYTORCH_MODEL_PATH}) bulundu!"
+                    )
+            return self.detect_model, self.detect_engine_name
+
+        def get_cam_engine(self) -> MultiLayerYoloCAM:
+            if self.cam_engine is None:
+                if not PYTORCH_MODEL_PATH.exists():
+                    raise FileNotFoundError(f"LayerCAM için PyTorch modeli bulunamadı: {PYTORCH_MODEL_PATH}")
+                print(f"[ModelManager] LayerCAM motoru yükleniyor: {PYTORCH_MODEL_PATH} (device=cpu)")
+                self.pt_model = YOLO(str(PYTORCH_MODEL_PATH))
+                self.cam_engine = MultiLayerYoloCAM(
+                    nn_model=self.pt_model.model,
+                    layer_indices=[4],
+                    imgsz=IMGSZ,
+                    device="cpu",
+                )
+            return self.cam_engine
+
+    MODELS = ModelManager()
 else:
     REPO_ROOT = BASE_DIR.parent
-    WEIGHTS_DIR = REPO_ROOT / "runs" / "detect" / "g_y11s_1024_full" / "weights"
     EXAMPLES_DIR = BASE_DIR / "examples"
     RESULTS_DIR = REPO_ROOT / "results"
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
-    from scripts.gradcam import (
+    from tracera_core import (  # noqa: E402
+        CLASS_COLORS,
+        CLASS_NAMES,
+        DEFAULT_CONF,
+        IMGSZ,
+        MODELS,
+        OPENVINO_MODEL_PATH,
+        PYTORCH_MODEL_PATH,
+        WEIGHTS_DIR,
+        ModelManager,
         MultiLayerYoloCAM,
         box_orig_to_lb,
         letterbox_image,
         make_overlay_and_zoom,
     )
-
-# -----------------------------------------------------------------------------
-# Ağırlık ve Model Sabitleri (HuggingFace Spaces / yerel dağıtım için merkezi)
-# -----------------------------------------------------------------------------
-OPENVINO_MODEL_PATH = WEIGHTS_DIR / "last_int8_openvino_model"
-PYTORCH_MODEL_PATH = WEIGHTS_DIR / "last.pt"
-IMGSZ = 1024
-DEFAULT_CONF = 0.395
-DEFAULT_IOU = 0.50
-
-CLASS_NAMES = {
-    0: "missing_hole",
-    1: "mouse_bite",
-    2: "open_circuit",
-    3: "short",
-    4: "spur",
-    5: "spurious_copper",
-}
-
-CLASS_COLORS = {
-    0: (230, 25, 75),    # Kırmızımsı
-    1: (60, 180, 75),    # Yeşil
-    2: (255, 225, 25),   # Sarı
-    3: (0, 130, 200),    # Mavi
-    4: (245, 130, 48),   # Turuncu
-    5: (145, 30, 180),   # Mor
-}
 
 # -----------------------------------------------------------------------------
 # Dinamik Metrik Yükleyicileri
@@ -162,48 +208,7 @@ def load_dynamic_metrics_markdown() -> str:
     return "\n".join(md_lines)
 
 
-# -----------------------------------------------------------------------------
-# Model Yükleme ve Önbellekleme
-# -----------------------------------------------------------------------------
-class ModelManager:
-    """Çıkarım ve CAM modellerini yöneten tekil servis."""
-
-    def __init__(self) -> None:
-        self.detect_model: YOLO | None = None
-        self.detect_engine_name: str = ""
-        self.pt_model: YOLO | None = None
-        self.cam_engine: MultiLayerYoloCAM | None = None
-
-    def get_detector(self) -> tuple[YOLO, str]:
-        if self.detect_model is None:
-            if OPENVINO_MODEL_PATH.exists():
-                print(f"[ModelManager] OpenVINO INT8 modeli yükleniyor: {OPENVINO_MODEL_PATH}")
-                self.detect_model = YOLO(str(OPENVINO_MODEL_PATH), task="detect")
-                self.detect_engine_name = "OpenVINO INT8 (CPU Optimized)"
-            elif PYTORCH_MODEL_PATH.exists():
-                print(f"[ModelManager] PyTorch modeli yükleniyor: {PYTORCH_MODEL_PATH}")
-                self.detect_model = YOLO(str(PYTORCH_MODEL_PATH))
-                self.detect_engine_name = "PyTorch FP32 (last.pt)"
-            else:
-                raise FileNotFoundError(f"Ne OpenVINO ({OPENVINO_MODEL_PATH}) ne de PyTorch ({PYTORCH_MODEL_PATH}) bulundu!")
-        return self.detect_model, self.detect_engine_name
-
-    def get_cam_engine(self) -> MultiLayerYoloCAM:
-        if self.cam_engine is None:
-            if not PYTORCH_MODEL_PATH.exists():
-                raise FileNotFoundError(f"LayerCAM için PyTorch modeli bulunamadı: {PYTORCH_MODEL_PATH}")
-            print(f"[ModelManager] LayerCAM motoru yükleniyor: {PYTORCH_MODEL_PATH} (device=cpu)")
-            self.pt_model = YOLO(str(PYTORCH_MODEL_PATH))
-            self.cam_engine = MultiLayerYoloCAM(
-                nn_model=self.pt_model.model,
-                layer_indices=[4],
-                imgsz=IMGSZ,
-                device="cpu",
-            )
-        return self.cam_engine
-
-
-MODELS = ModelManager()
+# ModelManager / MODELS: Space modunda yerel, repo modunda tracera_core üzerinden sağlanır.
 
 
 # -----------------------------------------------------------------------------
