@@ -21,4 +21,7 @@ __pycache__/
 
 # Dağıtım paketleri
 space/
+dist/
+build/
+.pytest_cache/
 

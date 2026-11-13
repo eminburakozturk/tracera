@@ -26,6 +26,11 @@ from fastapi.responses import JSONResponse
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     REPO_ROOT = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    # PyInstaller paketinde app/app.py modül düzeyindeki gradio importunu hafifçe atla
+    if "gradio" not in sys.modules:
+        import types
+
+        sys.modules["gradio"] = types.ModuleType("gradio")
 else:
     REPO_ROOT = Path(__file__).resolve().parent.parent
 
