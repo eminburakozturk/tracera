@@ -33,6 +33,7 @@ IMGSZ = 1024
 DEFAULT_CONF = 0.395
 DEFAULT_IOU_NMS = 0.7
 LETTERBOX_PAD = 114
+APP_VERSION = "1.1.0"
 
 CLASS_NAMES: dict[int, str] = {
     0: "missing_hole",
@@ -59,7 +60,7 @@ def load_meta(meta_path: Path | None = None) -> dict[str, Any]:
     if target.is_file():
         return json.loads(target.read_text(encoding="utf-8"))
     return {
-        "version": "1",
+        "version": APP_VERSION,
         "model": "yolo11s",
         "imgsz": IMGSZ,
         "conf": DEFAULT_CONF,

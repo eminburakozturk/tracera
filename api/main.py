@@ -51,6 +51,7 @@ from tracera_core import (  # noqa: E402
 )
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # CONTRACT §3: 25 MB
+APP_VERSION = "1.1.0"
 
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -70,7 +71,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Tracera Local API",
-    version=str(load_meta().get("version", "1")),
+    version=str(load_meta().get("version", APP_VERSION)),
     lifespan=lifespan,
 )
 
@@ -163,7 +164,7 @@ def get_health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         model=str(meta.get("model", "yolo11s")),
-        version=str(meta.get("version", "1")),
+        version=str(meta.get("version", APP_VERSION)),
         device="cpu",
         backends=MODELS.available_backends(),
     )

@@ -38,7 +38,7 @@ def test_health(client: TestClient) -> None:
     data = resp.json()
     assert data["status"] == "ok"
     assert data["model"] == "yolo11s"
-    assert data["version"] == "1"
+    assert data["version"] == "1.1.0"
     assert data["device"] == "cpu"
     assert "openvino-int8" in data["backends"]
 
