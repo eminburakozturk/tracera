@@ -589,12 +589,11 @@ export function App() {
           id="main-content"
           className="mx-auto w-full max-w-7xl flex-1 px-4 py-5"
         >
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence initial={false}>
             <motion.div
               key={activeTab}
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
+              initial={prefersReducedMotion ? false : { y: 6 }}
+              animate={{ y: 0 }}
               transition={pageTransition}
             >
               {activeTab === "home" && (
@@ -602,6 +601,7 @@ export function App() {
                   onSelectExample={handleSelectExample}
                   onSelectFile={handleSelectFile}
                   onOpenHistoryRecord={handleOpenHistoryRecord}
+                  onRunDetect={() => handleRunDetect()}
                 />
               )}
               {activeTab === "detect" && (

@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "../lib/utils";
 import { useAppStore, type AppTab } from "../store/useAppStore";
 
-export const SIDEBAR_ITEMS: Array<{
+const SIDEBAR_ITEMS: Array<{
   id: AppTab;
   icon: typeof Home;
   labelKey: string;

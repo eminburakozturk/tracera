@@ -49,6 +49,7 @@ export interface BatchQueueItem {
   error?: string;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export async function runBatchQueueSequentially(params: {
   items: BatchQueueItem[];
   confThreshold: number;

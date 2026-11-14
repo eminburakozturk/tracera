@@ -33,12 +33,14 @@ interface HomeViewProps {
   onSelectExample: (example: ValExampleItem) => Promise<void>;
   onSelectFile: (file: File) => Promise<void>;
   onOpenHistoryRecord?: (record: HistoryRecord) => void;
+  onRunDetect?: () => Promise<void>;
 }
 
 export function HomeView({
   onSelectExample,
   onSelectFile,
   onOpenHistoryRecord,
+  onRunDetect,
 }: HomeViewProps) {
   const { t } = useTranslation();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -115,8 +117,11 @@ export function HomeView({
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
-              onClick={() => setActiveTab("detect")}
-              data-testid="home-go-detect-btn"
+              onClick={() => {
+                setActiveTab("detect");
+                void onRunDetect?.();
+              }}
+              data-testid="run-detect-btn"
             >
               <span>{t("home.openInspect")}</span>
               <ArrowRight className="h-4 w-4" />

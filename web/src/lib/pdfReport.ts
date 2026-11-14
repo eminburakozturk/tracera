@@ -358,7 +358,7 @@ export async function generateCombinedBatchPdfBytes(params: {
   const font = await pdfDoc.embedFont(fontBytes, { subset: false });
 
   const page = pdfDoc.addPage([595.28, 841.89]);
-  const { width, height } = page.getSize();
+  const { height } = page.getSize();
   let y = height - 48;
 
   const passCount = params.items.filter(
