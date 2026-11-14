@@ -66,6 +66,11 @@ Bu kontrol listesi, yeni bir Tracera sürümü (ör. `v1.1.0`) yayınlanırken d
   - Tarayıcıda açarak `v1.1` sekmelerinin (Ana Sayfa, İncele, Sonuçlar & PR/Kalibrasyon grafikleri, Kusur Rehberi, Zaman Çizelgesi) ve WebGPU/WASM çıkarımının çalıştığını kontrol et.
 - [ ] **3) Model Deposu (`ebboo/tracera-model`) kontrolü:**
   - `web/public/models/meta.json` (`version: "1.1.0"`) güncellendiyse `https://huggingface.co/ebboo/tracera-model` deposundaki `meta.json` dosyasını senkronize et.
+- [ ] **4) Space yüklemesinden sonra `smoke_live.py` çalıştır:**
+  ```powershell
+  C:\Users\Burak\anaconda3\envs\tracera\python.exe scripts/smoke_live.py
+  ```
+  - `results/smoke_live.md` raporunda `/detect_api` tespit listesinin ve `/explain_api` CONTRACT v1.3 alanlarının (`energy_in_box`, `peak_in_box`, `peak_xy`) başarıyla doğrulandığını kontrol et.
 
 ---
 
