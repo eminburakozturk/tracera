@@ -209,6 +209,13 @@ def _collect_data() -> dict[str, Any]:
     if not phone_rows:
         raise ValueError("results/device_bench_phone.csv bos")
 
+    rel_val_json = json.loads(
+        (WEB_DIR / "public" / "data" / "reliability_val.json").read_text(encoding="utf-8")
+    )
+    rel_test_json = json.loads(
+        (WEB_DIR / "public" / "data" / "reliability_test.json").read_text(encoding="utf-8")
+    )
+
     return {
         "parity_images": parity_images,
         "parity_summary": parity_summary,
@@ -232,7 +239,67 @@ def _collect_data() -> dict[str, Any]:
         "desk": _extract_desktop_metrics(),
         "rel": _extract_release_artifacts(),
         "phone": phone_rows[0],
+        "rel_val": rel_val_json,
+        "rel_test": rel_test_json,
     }
+
+
+def _build_reliability_section(data: dict[str, Any]) -> str:
+    val_data = data["rel_val"]
+    test_data = data["rel_test"]
+    val_bins = {b["bin"]: b for b in val_data["bins"]}
+    test_bins = {b["bin"]: b for b in test_data["bins"]}
+
+    def _fmt_prec(n_val: int, prec: float | None) -> str:
+        if n_val == 0 or prec is None:
+            return "—"
+        return f"{prec:.4f} (%{prec * 100:.1f})"
+
+    lines = [
+        "### Güven aralığına göre kesinlik (val ve test)",
+        "",
+        "| aralık | val n | val kesinlik | test n | test TP | test FP | test kesinlik |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for r_key in [b["bin"] for b in val_data["bins"]]:
+        vb = val_bins[r_key]
+        tb = test_bins[r_key]
+        label = r_key.replace("-", "–")
+        vn = int(vb["n"])
+        tn = int(tb["n"])
+        if vn == 0 and tn == 0:
+            lines.append(f"| {label} | 0 | — | 0 | — | — | — |")
+        else:
+            v_prec_str = _fmt_prec(vn, vb["precision"])
+            t_prec_str = _fmt_prec(tn, tb["precision"])
+            t_tp_str = "—" if tn == 0 else str(int(tb["TP"]))
+            t_fp_str = "—" if tn == 0 else str(int(tb["FP"]))
+            lines.append(
+                f"| {label} | {vn} | {v_prec_str} | {tn} | {t_tp_str} | {t_fp_str} | {t_prec_str} |"
+            )
+
+    v_tot_n = int(val_data["total_detections"])
+    v_tot_p = float(val_data["overall_precision"])
+    t_tot_n = int(test_data["total_detections"])
+    t_tot_tp = int(test_data["total_TP"])
+    t_tot_fp = int(test_data["total_FP"])
+    t_tot_p = float(test_data["overall_precision"])
+    lines.append(
+        f"| **Toplam (≥ 0.395)** | **{v_tot_n}** | **{_fmt_prec(v_tot_n, v_tot_p)}** | "
+        f"**{t_tot_n}** | **{t_tot_tp}** | **{t_tot_fp}** | **{_fmt_prec(t_tot_n, t_tot_p)}** |"
+    )
+
+    lines.extend([
+        "",
+        "Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; "
+        "test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. "
+        "Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) "
+        "Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için "
+        "genel bir kalibrasyon iddiası yapılmaz (arayüzde `0.395–0.6` aralığına eklenen *\"Düşük güven: gözden geçirin\"* "
+        "etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).",
+    ])
+    return "\n".join(lines)
 
 
 def _build_everywhere_section(data: dict[str, Any]) -> str:
@@ -401,6 +468,7 @@ def build_final_readme_draft() -> str:
     # Zaten v1.0.0 yapisina donusturulmus README.md uzerinde yeniden calisilirsa
     # yalnizca veri odakli bolumleri (Bölüm 7 ve English Summary) tazele.
     everywhere_block = _build_everywhere_section(data)
+    reliability_block = _build_reliability_section(data)
     two_way_pct_1dp = f"{float(data['parity_summary']['two_way_match_pct']):.1f}%"
     n_parity_imgs = len(data["parity_images"])
     phone_model_ms_int = round(float(data["phone"]["medyan_model_ms"]))
@@ -414,8 +482,21 @@ def build_final_readme_draft() -> str:
 
     draft_comment = "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->\n\n"
 
+    def _inject_reliability(text: str) -> str:
+        rel_re = re.compile(
+            r"### Güven aralığına göre kesinlik \(val ve test\).*?(?=\n\n---\n\n## 5\.)",
+            flags=re.DOTALL,
+        )
+        if rel_re.search(text):
+            return rel_re.sub(lambda _m: reliability_block, text, count=1)
+        sec5_marker = "---\n\n## 5. Açıklanabilir Yapay Zeka (XAI) Doğrulama Protokolü"
+        if sec5_marker not in text:
+            raise ValueError("Bölüm 5 siniri bulunamadi")
+        return text.replace(sec5_marker, f"{reliability_block}\n\n{sec5_marker}", 1)
+
     if "## 7. Her yerde çalışır: web, masaüstü, Android" in raw_base:
         body = re.sub(r"^<!-- Bu taslak .*?-->\s*", "", raw_base, count=1, flags=re.DOTALL)
+        body = _inject_reliability(body)
         sec7_re = re.compile(
             r"## 7\. Her yerde çalışır: web, masaüstü, Android.*?\n---(?=\n\n## 8\.)",
             flags=re.DOTALL,
@@ -536,6 +617,7 @@ def build_final_readme_draft() -> str:
 
     sec8_marker = "## 8. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)"
     draft = draft.replace(sec8_marker, f"{everywhere_block}\n\n{sec8_marker}", 1)
+    draft = _inject_reliability(draft)
 
     sec11_marker = "## 11. Veri Kaynakları ve Lisans"
     cmds_text = "\n".join(app_build_cmds)
@@ -564,8 +646,10 @@ def strip_draft_comment(markdown: str) -> str:
 
 def main() -> int:
     import sys
+    from make_readme_tables import main as update_readme_tables
 
     write_readme = "--write-readme" in sys.argv[1:]
+    update_readme_tables()
     content = build_final_readme_draft()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(content, encoding="utf-8", newline="\n")

@@ -86,6 +86,20 @@
 > - 4 temiz şablon görüntüsünde toplam 3 yanlış alarm üretilmiştir (Kart 10 ve Kart 11'de sıfır yanlış alarm).
 > - Kart 06 temiz şablonunda tespit edilen mouse_bite (güven: 0.5569, cx=1000.6, cy=1380.1), test görüntülerindeki 57 mouse_bite FP'sinin konumuyla tam olarak örtüşmektedir. Bu tespit, hatanın sentetik bozulmadan değil, kartın kendi tasarım şablonundan kaynaklandığını **kesin** olarak doğrular.
 
+### Güven aralığına göre kesinlik (val ve test)
+
+| aralık | val n | val kesinlik | test n | test TP | test FP | test kesinlik |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.395–0.5 | 4 | 1.0000 (%100.0) | 78 | 10 | 68 | 0.1282 (%12.8) |
+| 0.5–0.6 | 13 | 0.8462 (%84.6) | 68 | 10 | 58 | 0.1471 (%14.7) |
+| 0.6–0.7 | 20 | 0.9000 (%90.0) | 41 | 32 | 9 | 0.7805 (%78.0) |
+| 0.7–0.8 | 253 | 0.9763 (%97.6) | 211 | 206 | 5 | 0.9763 (%97.6) |
+| 0.8–0.9 | 240 | 0.9750 (%97.5) | 160 | 158 | 2 | 0.9875 (%98.8) |
+| 0.9–1.0 | 0 | — | 0 | — | — | — |
+| **Toplam (≥ 0.395)** | **530** | **0.9698 (%97.0)** | **558** | **416** | **142** | **0.7455 (%74.6)** |
+
+Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için genel bir kalibrasyon iddiası yapılmaz (arayüzde `0.395–0.6` aralığına eklenen *"Düşük güven: gözden geçirin"* etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).
+
 ### Tablo 6a: XAI Pointing Game, Rastgelelik ve Enerji Oranı (yolo11s @ 1024, n=150 Doğru Tespit)
 
 | Hedef Katman | Yöntem | Kendi Kutu Pointing (Eğitilmiş) | Pointing (Rastgele Model) | Rastgele Şans Oranı | Pencere Alan Oranı | Kutu İçi Enerji (Pencere İçi) | Taban Kutu Alan Oranı |
