@@ -31,7 +31,7 @@ Model seçiminde ve değerlendirmede aşırı iyimser tekil split yanılgısın�
 
 > **Metodolojik Not:** Test kartları (06 ve 10), 1024 kart bazlı CV'de en yüksek skoru alan Kat 5'in doğrulama kartları arasındaydı (0.9569 mAP50). Bu yüzden tek seferlik test skoru (0.9225) iyimser uçtadır; projenin ana iddiası **0.858 ± 0.152** CV ortalamasıdır. Ultralytics'in test için otomatik raporladığı P 0.9462 / R 0.8577, eşiği test setinin kendi F1 eğrisinden (0.569) seçtiği için bir üst sınırdır ("oracle eşik") ve başarı olarak raporlanmaz.
 
-> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). GitHub runner (CI #2) üzerinde 9/10 val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = 0.020`, maks. `0.136`, ort. `IoU = 0.982`, `0.395`'te tespit `42 → 45` (`+3`); tek görüntü testi `|Δ| = 0.0034` (`0.827784` vs `0.831160`) ölçüldü. Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
+> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). GitHub runner (CI #2, `results/ci2_linux_parity.csv`) üzerinde 9/10 val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = 0.020`, maks. `0.136`, ort. `IoU = 0.982`, `0.395`'te tespit `42 → 45` (`+3`); tek görüntü `pytest` testinde maks. güven farkı `|Δ| = 0.0034` (`0.827784` vs `0.831160`) ölçüldü. Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
 
 ---
 
@@ -260,12 +260,12 @@ Tarayıcı (`FP32 ONNX`) ile yerel masaüstü yan sunucusu (`OpenVINO INT8`) sı
 
 ### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)
 
-GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):
+GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):
 
 | Kapsam | Ort. \|Δconf\| | Maks. \|Δconf\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |
 |---|---:|---:|---:|---:|---|
 | GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |
-| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |
+| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **0.993** | **4 → 4 (0)** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `0.0087` / `0.0304`) |
 
 > Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
 

@@ -215,6 +215,11 @@ def _collect_data() -> dict[str, Any]:
     rel_test_json = json.loads(
         (WEB_DIR / "public" / "data" / "reliability_test.json").read_text(encoding="utf-8")
     )
+    ci2_rows = _read_csv(RESULTS_DIR / "ci2_linux_parity.csv")
+    ci2_summary = next(r for r in ci2_rows if r["image"] == "SUMMARY")
+    ci2_single = next(r for r in ci2_rows if r["image"] == "05_missing_hole_01.jpg")
+    ci2_tested = sum(1 for r in ci2_rows if r["status"] == "ok")
+    ci2_total = sum(1 for r in ci2_rows if r["image"] != "SUMMARY")
 
     return {
         "parity_images": parity_images,
@@ -241,6 +246,10 @@ def _collect_data() -> dict[str, Any]:
         "phone": phone_rows[0],
         "rel_val": rel_val_json,
         "rel_test": rel_test_json,
+        "ci2_summary": ci2_summary,
+        "ci2_single": ci2_single,
+        "ci2_tested": ci2_tested,
+        "ci2_total": ci2_total,
     }
 
 
@@ -326,6 +335,11 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
     rel = data["rel"]
     phone = data["phone"]
 
+    ci2_s = data["ci2_summary"]
+    ci2_1 = data["ci2_single"]
+    ci2_tested = data["ci2_tested"]
+    ci2_total = data["ci2_total"]
+
     int8_note = "INT8 dinamik ONNX elendi (WebGPU'da çalışmadı, WASM'da doğruluk düştü)"
     exe_size_label = rel["exe_mib"] or desk["nsis_mib"]
 
@@ -406,12 +420,12 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
         "",
         "### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)",
         "",
-        "GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
+        "GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
         "",
         "| Kapsam | Ort. \\|Δconf\\| | Maks. \\|Δconf\\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |",
         "|---|---:|---:|---:|---:|---|",
-        "| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
-        "| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |",
+        f"| GitHub runner (`{ci2_tested}/{ci2_total}` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **{float(ci2_s['mean_abs_dconf']):.3f}** | **{float(ci2_s['max_abs_dconf']):.3f}** | **{float(ci2_s['mean_iou']):.3f}** | **{int(ci2_s['ref_count_0395'])} → {int(ci2_s['linux_count_0395'])} ({int(ci2_s['count_diff_0395']):+d})** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
+        f"| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **{float(ci2_1['mean_iou']):.3f}** | **{int(ci2_1['ref_count_0395'])} → {int(ci2_1['linux_count_0395'])} ({int(ci2_1['count_diff_0395'])})** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `{float(ci2_1['mean_abs_dconf']):.4f}` / `{float(ci2_1['max_abs_dconf']):.4f}`) |",
         "",
         "> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.",
         "",
@@ -494,11 +508,15 @@ def build_final_readme_draft() -> str:
 
     draft_comment = "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->\n\n"
 
+    ci2_s = data["ci2_summary"]
     platform_note_line = (
-        "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). "
-        "GitHub runner (CI #2) üzerinde 9/10 val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = 0.020`, "
-        "maks. `0.136`, ort. `IoU = 0.982`, `0.395`'te tespit `42 → 45` (`+3`); tek görüntü testi `|Δ| = 0.0034` "
-        "(`0.827784` vs `0.831160`) ölçüldü. Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması."
+        f"> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). "
+        f"GitHub runner (CI #2, `results/ci2_linux_parity.csv`) üzerinde {data['ci2_tested']}/{data['ci2_total']} "
+        f"val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = {float(ci2_s['mean_abs_dconf']):.3f}`, "
+        f"maks. `{float(ci2_s['max_abs_dconf']):.3f}`, ort. `IoU = {float(ci2_s['mean_iou']):.3f}`, "
+        f"`0.395`'te tespit `{int(ci2_s['ref_count_0395'])} → {int(ci2_s['linux_count_0395'])}` (`{int(ci2_s['count_diff_0395']):+d}`); "
+        f"tek görüntü `pytest` testinde maks. güven farkı `|Δ| = 0.0034` (`0.827784` vs `0.831160`) ölçüldü. "
+        f"Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması."
     )
 
     def _inject_reliability(text: str) -> str:

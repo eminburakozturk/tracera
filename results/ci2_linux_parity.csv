@@ -1,0 +1,12 @@
+image,status,ref_count_025,linux_count_025,count_diff,ref_count_0395,linux_count_0395,count_diff_0395,matched,only_linux,only_ref,mean_iou,mean_abs_dconf,max_abs_dconf
+05_missing_hole_01.jpg,ok,5,5,0,4,4,0,5,0,0,0.992635,0.008720,0.030368
+05_short_01.jpg,ok,6,5,-1,4,4,0,5,0,1,0.982515,0.022971,0.081077
+11_mouse_bite_01.jpg,ok,6,6,0,5,5,0,6,0,0,0.985254,0.010153,0.027596
+11_spur_01.jpg,ok,6,6,0,5,6,1,6,0,0,0.984902,0.025483,0.136145
+05_mouse_bite_01.jpg,skipped_missing_file,,,,,,,,,,,,
+05_open_circuit_01.jpg,ok,5,4,-1,4,4,0,4,0,1,0.986071,0.019906,0.062629
+05_spurious_copper_01.jpg,ok,6,5,-1,5,5,0,5,0,1,0.973983,0.018127,0.079214
+11_missing_hole_01.jpg,ok,6,6,0,5,6,1,6,0,0,0.984167,0.027671,0.126302
+11_open_circuit_01.jpg,ok,6,6,0,5,5,0,6,0,0,0.964047,0.017770,0.089309
+11_spurious_copper_01.jpg,ok,6,6,0,5,6,1,6,0,0,0.986543,0.026784,0.105086
+SUMMARY,ok_9_of_10,52,49,-3,42,45,3,49,0,3,0.982029,0.019916,0.136145

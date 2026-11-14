@@ -392,15 +392,39 @@ def build_edge_benchmark_table() -> str:
 
 def build_platform_drift_table() -> str:
     """Tablo 7b: Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)."""
+    csv_path = RESULTS_DIR / "ci2_linux_parity.csv"
+    if not csv_path.is_file():
+        return "*ci2_linux_parity.csv bulunamadı.*"
+
+    df = pd.read_csv(csv_path)
+    summary_row = df[df["image"] == "SUMMARY"].iloc[0]
+    single_row = df[df["image"] == "05_missing_hole_01.jpg"].iloc[0]
+    tested_cnt = int((df["status"] == "ok").sum())
+    total_cnt = int(len(df[df["image"] != "SUMMARY"]))
+
+    sum_mean_dconf = float(summary_row["mean_abs_dconf"])
+    sum_max_dconf = float(summary_row["max_abs_dconf"])
+    sum_mean_iou = float(summary_row["mean_iou"])
+    sum_ref_0395 = int(summary_row["ref_count_0395"])
+    sum_lin_0395 = int(summary_row["linux_count_0395"])
+    sum_diff_0395 = int(summary_row["count_diff_0395"])
+
+    s_ref_0395 = int(single_row["ref_count_0395"])
+    s_lin_0395 = int(single_row["linux_count_0395"])
+    s_diff_0395 = int(single_row["count_diff_0395"])
+    s_mean_iou = float(single_row["mean_iou"])
+    s_mean_dconf = float(single_row["mean_abs_dconf"])
+    s_max_dconf = float(single_row["max_abs_dconf"])
+
     lines = [
         "### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)",
         "",
-        "GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
+        "GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
         "",
         "| Kapsam | Ort. \\|Δconf\\| | Maks. \\|Δconf\\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |",
         "|---|---:|---:|---:|---:|---|",
-        "| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
-        "| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |",
+        f"| GitHub runner (`{tested_cnt}/{total_cnt}` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **{sum_mean_dconf:.3f}** | **{sum_max_dconf:.3f}** | **{sum_mean_iou:.3f}** | **{sum_ref_0395} → {sum_lin_0395} ({sum_diff_0395:+d})** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
+        f"| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **{s_mean_iou:.3f}** | **{s_ref_0395} → {s_lin_0395} ({s_diff_0395})** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `{s_mean_dconf:.4f}` / `{s_max_dconf:.4f}`) |",
         "",
         "> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.",
         "",
