@@ -29,15 +29,12 @@ import {
   getClassColor,
   getClassDisplayName,
   isLowConfidenceReview,
-  LOW_CONF_REVIEW_LABEL_EN,
-  LOW_CONF_REVIEW_LABEL_TR,
-  LOW_CONF_REVIEW_TOOLTIP_EN,
-  LOW_CONF_REVIEW_TOOLTIP_TR,
   VERDICT_RULE_NOTE_EN,
   VERDICT_RULE_NOTE_TR,
 } from "../lib/v11Rules";
 import { useAppStore } from "../store/useAppStore";
 import type { Detection } from "../types";
+import { LowConfidenceReviewBadge } from "./LowConfidenceReviewBadge";
 import { PrMiniChart } from "./PrMiniChart";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -686,22 +683,13 @@ export function DetectView({
                             selectedDet.conf,
                             confThreshold,
                           ) && (
-                            <Badge
-                              variant="warning"
-                              data-testid="selected-low-conf-badge"
-                              title={
-                                lang === "en"
-                                  ? LOW_CONF_REVIEW_TOOLTIP_EN
-                                  : LOW_CONF_REVIEW_TOOLTIP_TR
-                              }
-                            >
-                              <AlertTriangle className="h-3 w-3 shrink-0" />
-                              <span>
-                                {lang === "en"
-                                  ? LOW_CONF_REVIEW_LABEL_EN
-                                  : LOW_CONF_REVIEW_LABEL_TR}
-                              </span>
-                            </Badge>
+                            <LowConfidenceReviewBadge
+                              idSuffix={`selected-${selectedDet.id}`}
+                              lang={lang}
+                              badgeTestId="selected-low-conf-badge"
+                              infoBtnTestId="selected-low-conf-info-btn"
+                              popoverTestId="selected-low-conf-popover"
+                            />
                           )}
                         </div>
                         <p className="font-mono text-[11px] text-[var(--text-secondary)] tabular-nums">
@@ -973,22 +961,13 @@ export function DetectView({
                             </p>
                             {isLowConfidenceReview(det.conf, confThreshold) && (
                               <div className="mt-1.5">
-                                <Badge
-                                  variant="warning"
-                                  data-testid={`low-conf-badge-${det.id}`}
-                                  title={
-                                    lang === "en"
-                                      ? LOW_CONF_REVIEW_TOOLTIP_EN
-                                      : LOW_CONF_REVIEW_TOOLTIP_TR
-                                  }
-                                >
-                                  <AlertTriangle className="h-3 w-3 shrink-0" />
-                                  <span>
-                                    {lang === "en"
-                                      ? LOW_CONF_REVIEW_LABEL_EN
-                                      : LOW_CONF_REVIEW_LABEL_TR}
-                                  </span>
-                                </Badge>
+                                <LowConfidenceReviewBadge
+                                  idSuffix={String(det.id)}
+                                  lang={lang}
+                                  badgeTestId={`low-conf-badge-${det.id}`}
+                                  infoBtnTestId={`low-conf-info-btn-${det.id}`}
+                                  popoverTestId={`low-conf-popover-${det.id}`}
+                                />
                               </div>
                             )}
                           </div>

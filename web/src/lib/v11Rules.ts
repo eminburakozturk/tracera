@@ -110,7 +110,6 @@ export const PDF_MANDATORY_FOOTER_TR =
   "Bu rapor Tracera yazılımının otomatik çıktısıdır; herhangi bir standarda uygunluk belgesi değildir. Karar kuralı: güven eşiği (varsayılan 0,395) üzerinde en az bir kusur → KALDI.";
 
 export const LOW_CONF_REVIEW_UPPER_BOUND = 0.6;
-export const LOW_CONF_REVIEW_DEFAULT_MIN = 0.395;
 
 export const LOW_CONF_REVIEW_LABEL_TR = "Düşük güven: gözden geçirin";
 export const LOW_CONF_REVIEW_LABEL_EN = "Low confidence: review";
@@ -122,8 +121,10 @@ export const LOW_CONF_REVIEW_TOOLTIP_EN =
 
 export function isLowConfidenceReview(
   conf: number,
-  minThreshold: number = LOW_CONF_REVIEW_DEFAULT_MIN,
+  activeThreshold?: number,
 ): boolean {
-  const effectiveMin = Math.max(minThreshold, LOW_CONF_REVIEW_DEFAULT_MIN);
-  return conf >= effectiveMin && conf < LOW_CONF_REVIEW_UPPER_BOUND;
+  if (typeof activeThreshold === "number" && conf < activeThreshold) {
+    return false;
+  }
+  return conf < LOW_CONF_REVIEW_UPPER_BOUND;
 }
