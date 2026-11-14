@@ -132,7 +132,7 @@
     "classDefLabel": "Sınıf Tanımı",
     "whatItShowsTitle": "Bu Harita Ne Gösterir?",
     "whatItShowsBody1": "LayerCAM, seçilen tespitin sınıf skoru için geriye yayılan pozitif gradyanları omurga Katman 4 aktivasyonlarıyla çarparak modelin karar verirken kart üzerinde en çok hangi bölgeye dayandığını gösterir.",
-    "whatItShowsMetrics": "Val kümesi (n={{n}}, imgsz={{imgsz}}) üzerinde LayerCAM @ Katman 4 silme sadakat testinde 1× kusur kutusu alanında ortalama göreli skor düşüşü {{drop1x}} (kontrol düşüşü {{ctrl1x}}, kazanma oranı %{{win1x}}); 2× alanda ise {{drop2x}} (kontrol {{ctrl2x}}, kazanma oranı %{{win2x}}) elde edilmiştir. Enerjinin %{{energy}}'i hedef kutu içindedir.",
+    "whatItShowsMetrics": "Val kümesi (n={{n}}, imgsz={{imgsz}}) üzerinde LayerCAM @ Katman 4 silme sadakat testinde 1× kusur kutusu alanında ortalama göreli skor düşüşü {{drop1x}} (kontrol düşüşü {{ctrl1x}}, kazanma oranı %{{win1x}}); 2× alanda ise {{drop2x}} (kontrol {{ctrl2x}}, kazanma oranı %{{win2x}}) elde edilmiştir. Isı haritası enerjisinin hedef kutu içindeki payı: %{{energy}}.",
     "whatItShowsCaveat": "Pointing game oranı %{{pointing}} olsa da rastgele ağırlıklı ağda bile %{{randPointing}} ölçüldüğünden, birincil sadakat kanıtı olarak silme testi esas alınmıştır."
   },
   "batch": {
