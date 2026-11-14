@@ -312,6 +312,73 @@ def _build_reliability_section(data: dict[str, Any]) -> str:
 
 
 
+
+def _build_baseline_section() -> str:
+    """Ön işleme farkı ve klasik şablon farkı bölümleri (results/baseline/*.csv). Dosya yoksa boş."""
+    base = REPO_ROOT / "results" / "baseline"
+    sq = base / "yolo_square_classaware.csv"
+    vs = base / "template_diff_vs_yolo.csv"
+    pj = base / "template_diff_params.json"
+    if not (sq.exists() and vs.exists() and pj.exists()):
+        return ""
+    op = {r["split"]: r for r in _read_csv(RESULTS_DIR / "operating_point.csv")}
+    sqr = {r["split"]: r for r in _read_csv(sq)}
+    params = json.loads(pj.read_text(encoding="utf-8"))
+    rows = _read_csv(vs)
+
+    def get(split: str, kart: str, method: str, iou: str) -> dict:
+        for r in rows:
+            if r["split"] == split and r["kart"] == kart and r["yöntem"].startswith(method) and r["iou"] == iou:
+                return r
+        raise KeyError((split, kart, method, iou))
+
+    out = [
+        "",
+        "### Değerlendirme ve Uygulama Ön İşlemesi Farkı",
+        "",
+        "Raporlanan çalışma noktası Ultralytics `DetectionValidator` ile `rect=True` (en az dolgu) ölçüldü; web, EXE ve Gradio ise görüntüyü `1024×1024` kareye dolguyla yerleştirir. "
+        "Uygulamanın ön işlemesi ONNX FP32 ile yeniden üretildi (PyTorch referansıyla 62/62 kutu eşleşmesi) ve aynı eşikle (`0.395`, sınıflı, IoU ≥ 0.5) ölçüldü:",
+        "",
+        "| Küme | Ön işleme | TP | FP | FN | P | R | F1 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for split in ("val", "test"):
+        o = op[split]
+        out.append(f"| {split} | `rect=True` (raporlanan) | {o['TP']} | {o['FP']} | {o['FN']} | {float(o['P']):.4f} | {float(o['R']):.4f} | {float(o['F1']):.4f} |")
+        q = sqr[split]
+        out.append(f"| {split} | kare letterbox (uygulama) | {q['TP']} | {q['FP']} | {q['FN']} | {float(q['P']):.4f} | {float(q['R']):.4f} | {float(q['F1']):.4f} |")
+    out += [
+        "",
+        "Test etkilenmiyor; val'deki fark neredeyse tamamen **Kart 05'teki tek sabit `spurious_copper` şablon noktasından** geliyor (güven `0.400–0.408`, `rect` ölçümünde eşiğin altında). "
+        "FP32–INT8 farkı, Linux CI'daki `+3` tespit ve bu ön işleme farkı aynı noktada görünüyor: eşiğe yapışık bir şablon özelliği, küçük sayısal değişikliklerle eşiği geçip geçmiyor. "
+        "Eşik ve raporlanan metrikler değiştirilmedi (test görüldükten sonra yeniden seçim yapılmaz); arayüzdeki val PR eğrisi ve güvenilirlik verisi `rect=True` ölçümündendir.",
+        "",
+        "### Klasik Şablon Farkı Karşılaştırması",
+        "",
+        "PKU-Market-PCB'de kusurlu görüntüler `PCB_USED/` şablon fotoğrafıyla **piksel hizalıdır** (faz korelasyonu kayması ~0.001 px): kusurlar şablonun üzerine eklenmiştir. "
+        "Bunun ne kadar kolaylaştırdığını ölçmek için referanslı klasik bir yöntem denendi: gri ton fark → Gauss → eşik → genişletme → bağlı bileşenler (sınıf vermez). "
+        f"Parametreler **yalnız train kartlarında** seçildi (bulanıklık {params['blur']}, eşik {params['thr']}, genişletme {params['dilate']}, en az alan {params['min_area']}; train F1 {float(params['F1']):.3f}); val ve test birer kez değerlendirildi. "
+        "Kıyas sınıfsızdır (yalnız yer); YOLO uygulamanın ön işlemesiyle, eşik `0.395`.",
+        "",
+        "| Küme | Yöntem | F1 (IoU ≥ 0.5) | P | R | F1 (IoU ≥ 0.1) |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for split in ("val", "test"):
+        for m, label in (("şablon", "Klasik şablon farkı"), ("YOLO", "YOLO11s")):
+            a, b = get(split, "tümü", m, "0.5"), get(split, "tümü", m, "0.1")
+            out.append(f"| {split} | {label} | {float(a['F1']):.3f} | {float(a['P']):.3f} | {float(a['R']):.3f} | {float(b['F1']):.3f} |")
+    out += ["", "Kart bazında (F1, IoU ≥ 0.5):", "", "| Kart | Şablon noktası | Klasik şablon farkı | YOLO11s |", "|---|---|---:|---:|"]
+    for split, kart, has_tp in (("val", "05", "var"), ("test", "06", "var (114 FP)"), ("val", "11", "yok"), ("test", "10", "yok")):
+        a, b = get(split, kart, "şablon", "0.5"), get(split, kart, "YOLO", "0.5")
+        out.append(f"| {kart} ({split}) | {has_tp} | {float(a['F1']):.3f} | {float(b['F1']):.3f} |")
+    out += [
+        "",
+        "**Yorum:** Hizalı bir referans varken basit fark alma bu veri setinde yer tespitinde YOLO ile başa baş ya da üstün. Bu, PKU'daki başarının gerçek üretim hattını (hizalama, ışık farkı, referans yokluğu) temsil etmediğinin doğrudan kanıtıdır. "
+        "YOLO'nun geride kaldığı kartlar tam olarak şablon noktası olan kartlardır; şablon noktası olmayan kartlarda YOLO öndedir. YOLO'nun değeri referans görüntü gerektirmemesi ve kusur sınıfı vermesidir. "
+        "Kaynak: `scripts/baseline_template_diff.py`, `results/baseline/`.",
+    ]
+    return "\n".join(out)
+
 def _ui_v11_section() -> list[str]:
     """v1.1 arayüz ekranları: yalnız results/ui_v11/ altında gerçekten var olan görüntüler."""
     shots = [
@@ -535,7 +602,7 @@ def build_final_readme_draft() -> str:
     # Zaten v1.0.0 yapisina donusturulmus README.md uzerinde yeniden calisilirsa
     # yalnizca veri odakli bolumleri (Bölüm 7 ve English Summary) tazele.
     everywhere_block = _build_everywhere_section(data)
-    reliability_block = _build_reliability_section(data)
+    reliability_block = _build_reliability_section(data) + _build_baseline_section()
     two_way_pct_1dp = f"{float(data['parity_summary']['two_way_match_pct']):.1f}%"
     n_parity_imgs = len(data["parity_images"])
     phone_model_ms_int = round(float(data["phone"]["medyan_model_ms"]))

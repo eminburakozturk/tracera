@@ -1,0 +1,8 @@
+{
+  "ref_dets": 62,
+  "matched": 62,
+  "match_rate": 1.0,
+  "mean_iou": 0.9931,
+  "mean_abs_dconf": 0.0,
+  "max_abs_dconf": 0.0
+}

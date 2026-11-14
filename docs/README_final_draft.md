@@ -123,6 +123,40 @@ Kart 10 ve 11 şablonlarında hiç yanlış alarm yoktur (4 temiz şablonda topl
 | **Toplam (≥ 0.395)** | **530** | **0.9698 (%97.0)** | **558** | **416** | **142** | **0.7455 (%74.6)** |
 
 Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için genel bir kalibrasyon iddiası yapılmaz (arayüzde güveni `0.6`'nın altındaki tespitlere eklenen *"Düşük güven: gözden geçirin"* etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).
+### Değerlendirme ve Uygulama Ön İşlemesi Farkı
+
+Raporlanan çalışma noktası Ultralytics `DetectionValidator` ile `rect=True` (en az dolgu) ölçüldü; web, EXE ve Gradio ise görüntüyü `1024×1024` kareye dolguyla yerleştirir. Uygulamanın ön işlemesi ONNX FP32 ile yeniden üretildi (PyTorch referansıyla 62/62 kutu eşleşmesi) ve aynı eşikle (`0.395`, sınıflı, IoU ≥ 0.5) ölçüldü:
+
+| Küme | Ön işleme | TP | FP | FN | P | R | F1 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| val | `rect=True` (raporlanan) | 514 | 16 | 48 | 0.9698 | 0.9146 | 0.9414 |
+| val | kare letterbox (uygulama) | 515 | 54 | 47 | 0.9051 | 0.9164 | 0.9107 |
+| test | `rect=True` (raporlanan) | 416 | 142 | 53 | 0.7455 | 0.8870 | 0.8101 |
+| test | kare letterbox (uygulama) | 416 | 139 | 53 | 0.7495 | 0.8870 | 0.8125 |
+
+Test etkilenmiyor; val'deki fark neredeyse tamamen **Kart 05'teki tek sabit `spurious_copper` şablon noktasından** geliyor (güven `0.400–0.408`, `rect` ölçümünde eşiğin altında). FP32–INT8 farkı, Linux CI'daki `+3` tespit ve bu ön işleme farkı aynı noktada görünüyor: eşiğe yapışık bir şablon özelliği, küçük sayısal değişikliklerle eşiği geçip geçmiyor. Eşik ve raporlanan metrikler değiştirilmedi (test görüldükten sonra yeniden seçim yapılmaz); arayüzdeki val PR eğrisi ve güvenilirlik verisi `rect=True` ölçümündendir.
+
+### Klasik Şablon Farkı Karşılaştırması
+
+PKU-Market-PCB'de kusurlu görüntüler `PCB_USED/` şablon fotoğrafıyla **piksel hizalıdır** (faz korelasyonu kayması ~0.001 px): kusurlar şablonun üzerine eklenmiştir. Bunun ne kadar kolaylaştırdığını ölçmek için referanslı klasik bir yöntem denendi: gri ton fark → Gauss → eşik → genişletme → bağlı bileşenler (sınıf vermez). Parametreler **yalnız train kartlarında** seçildi (bulanıklık 3, eşik 8, genişletme 31, en az alan 1000; train F1 0.881); val ve test birer kez değerlendirildi. Kıyas sınıfsızdır (yalnız yer); YOLO uygulamanın ön işlemesiyle, eşik `0.395`.
+
+| Küme | Yöntem | F1 (IoU ≥ 0.5) | P | R | F1 (IoU ≥ 0.1) |
+|---|---|---:|---:|---:|---:|
+| val | Klasik şablon farkı | 0.913 | 0.905 | 0.920 | 0.992 |
+| val | YOLO11s | 0.911 | 0.905 | 0.916 | 0.921 |
+| test | Klasik şablon farkı | 0.896 | 0.889 | 0.904 | 0.970 |
+| test | YOLO11s | 0.820 | 0.757 | 0.895 | 0.826 |
+
+Kart bazında (F1, IoU ≥ 0.5):
+
+| Kart | Şablon noktası | Klasik şablon farkı | YOLO11s |
+|---|---|---:|---:|
+| 05 (val) | var | 0.932 | 0.873 |
+| 06 (test) | var (114 FP) | 0.926 | 0.779 |
+| 11 (val) | yok | 0.896 | 0.946 |
+| 10 (test) | yok | 0.840 | 0.918 |
+
+**Yorum:** Hizalı bir referans varken basit fark alma bu veri setinde yer tespitinde YOLO ile başa baş ya da üstün. Bu, PKU'daki başarının gerçek üretim hattını (hizalama, ışık farkı, referans yokluğu) temsil etmediğinin doğrudan kanıtıdır. YOLO'nun geride kaldığı kartlar tam olarak şablon noktası olan kartlardır; şablon noktası olmayan kartlarda YOLO öndedir. YOLO'nun değeri referans görüntü gerektirmemesi ve kusur sınıfı vermesidir. Kaynak: `scripts/baseline_template_diff.py`, `results/baseline/`.
 
 ---
 

@@ -1,0 +1,3 @@
+split,on_isleme,TP,FP,FN,P,R,F1
+val,kare letterbox (uygulama),515,54,47,0.9051,0.9164,0.9107
+test,kare letterbox (uygulama),416,139,53,0.7495,0.887,0.8125
