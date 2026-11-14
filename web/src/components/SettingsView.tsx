@@ -13,6 +13,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { BackendChoice } from "../inference/types";
 import { clearAllHistoryRecords } from "../lib/historyDb";
+import { getAppVersion, getModelVersion } from "../lib/meta";
 import { useAppStore } from "../store/useAppStore";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -69,6 +70,9 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
     setTimeout(() => setClearedBanner(false), 3000);
   };
 
+  const modelVer = getModelVersion(meta);
+  const appVer = getAppVersion(meta);
+
   return (
     <div className="space-y-5" data-testid="settings-view">
       <Card>
@@ -80,7 +84,9 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="font-mono">
-                {t("settings.versionLabel")}
+                {lang === "en"
+                  ? `App: ${appVer === "bilinmiyor" ? appVer : `v${appVer}`} · Model: ${modelVer === "bilinmiyor" ? modelVer : `v${modelVer}`}`
+                  : `Uygulama: ${appVer === "bilinmiyor" ? appVer : `v${appVer}`} · Model: ${modelVer === "bilinmiyor" ? modelVer : `v${modelVer}`}`}
               </Badge>
               <Badge variant="default" className="font-mono">
                 {t("settings.licenseLabel")}
@@ -217,13 +223,29 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
               <div>
                 <dt className="text-[10px] text-[var(--text-muted)]">Model</dt>
                 <dd className="font-semibold text-[var(--text-primary)]">
-                  {meta.model}
+                  {meta.model} ({meta.imgsz}×{meta.imgsz})
                 </dd>
               </div>
               <div>
-                <dt className="text-[10px] text-[var(--text-muted)]">Boyut</dt>
-                <dd className="font-semibold text-[var(--text-primary)]">
-                  {meta.imgsz}×{meta.imgsz}
+                <dt className="text-[10px] text-[var(--text-muted)]">
+                  Model Sürümü
+                </dt>
+                <dd
+                  data-testid="settings-model-version"
+                  className="font-semibold text-[var(--text-primary)]"
+                >
+                  {getModelVersion(meta)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] text-[var(--text-muted)]">
+                  Uygulama Sürümü
+                </dt>
+                <dd
+                  data-testid="settings-app-version"
+                  className="font-semibold text-[var(--text-primary)]"
+                >
+                  {getAppVersion(meta)}
                 </dd>
               </div>
               <div>
@@ -234,10 +256,11 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
                   {meta.conf} (NMS IoU {meta.iou_nms})
                 </dd>
               </div>
-              <div>
+              <div className="col-span-2">
                 <dt className="text-[10px] text-[var(--text-muted)]">ONNX</dt>
                 <dd className="truncate font-semibold text-[var(--text-primary)]">
                   {meta.onnx}
+                  {meta.onnx_sha256 ? ` (${meta.onnx_sha256.slice(0, 12)}…)` : ""}
                 </dd>
               </div>
             </dl>
@@ -250,7 +273,9 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
                 {t("settings.storageTitle")}
               </h4>
               <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                GNU AGPL-3.0 · Sürüm v1.1.0
+                GNU AGPL-3.0 · Uygulama{" "}
+                {appVer === "bilinmiyor" ? appVer : `v${appVer}`} · Model{" "}
+                {modelVer === "bilinmiyor" ? modelVer : `v${modelVer}`}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

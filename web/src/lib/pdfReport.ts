@@ -2,6 +2,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, PDFName, PDFString, rgb } from "pdf-lib";
 import type { LangCode } from "../store/useAppStore";
 import type { DetectResult, ExplainResult, ModelMeta } from "../types";
+import { getAppVersion, getModelVersion } from "./meta";
 import {
   getClassDisplayName,
   PDF_MANDATORY_FOOTER_TR,
@@ -93,10 +94,13 @@ export async function generateInspectionPdfBytes(
     )
     .join(" | ");
 
+  const modelVersion = getModelVersion(input.meta);
+  const appVersion = getAppVersion(input.meta);
+
   const fullTextSummary = [
     `Tracera Muayene Raporu — ${input.filename}`,
     `Tarih: ${createdAt}`,
-    `Model: ${input.meta.model} (${input.meta.imgsz}x${input.meta.imgsz}, v${input.meta.version})`,
+    `Model: ${input.meta.model} (${input.meta.imgsz}x${input.meta.imgsz}, model sürümü: ${modelVersion}, uygulama sürümü: ${appVersion})`,
     `Motor: ${input.result.backend}`,
     `Güven Eşiği: ${input.confThreshold.toFixed(3)}`,
     `Karar: ${verdict} (${activeDetections.length} kusur)`,
@@ -185,7 +189,7 @@ export async function generateInspectionPdfBytes(
 
   // Meta bilgiler
   const metaLines = [
-    `Model: ${input.meta.model} (${input.meta.imgsz}×${input.meta.imgsz}, sürüm ${input.meta.version})`,
+    `Model: ${input.meta.model} (${input.meta.imgsz}×${input.meta.imgsz}, model sürümü: ${modelVersion} · uygulama sürümü: ${appVersion})`,
     `Çıkarım Motoru: ${input.result.backend}   |   Model Süresi: ${input.result.timing.model_ms.toFixed(1)} ms   |   Toplam Süre: ${input.result.timing.total_ms.toFixed(1)} ms`,
     `Güven Eşiği: ${input.confThreshold.toFixed(3)}   |   Tespit Edilen Kusur Sayısı: ${activeDetections.length}   |   Sonuç: ${verdict}`,
   ];

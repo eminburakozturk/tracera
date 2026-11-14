@@ -1,5 +1,7 @@
 export interface ModelMeta {
   version: string;
+  model_version?: string;
+  onnx_sha256?: string;
   model: string;
   imgsz: number;
   conf: number;

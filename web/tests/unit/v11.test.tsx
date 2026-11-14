@@ -17,13 +17,18 @@ import {
   ONBOARDING_STORAGE_KEY,
   OnboardingModal,
 } from "../../src/components/OnboardingModal";
+import { SettingsView } from "../../src/components/SettingsView";
 import { METRICS_FALLBACK } from "../../src/fixtures";
 import {
   clearAllHistoryRecords,
   listHistoryRecords,
   saveInspectionToHistory,
 } from "../../src/lib/historyDb";
-import { FALLBACK_META } from "../../src/lib/meta";
+import {
+  FALLBACK_META,
+  getAppVersion,
+  getModelVersion,
+} from "../../src/lib/meta";
 import { generateInspectionPdfBytes } from "../../src/lib/pdfReport";
 import { buildReliabilitySummary } from "../../src/lib/reliability";
 import { getApprovedTimelineItems } from "../../src/lib/timeline";
@@ -480,8 +485,9 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("8) Düşük güven: gözden geçirin etiketi (0.394 → etiket yok ve tespit gösterilmez; 0.45 → etiket var ve KALDI; 0.6 → etiket yok)", () => {
+  it("8) Düşük güven: gözden geçirin etiketi (eşik 0.30 iken 0.35 → etiket var; 0.394 @ 0.395 → gizli; 0.45 → etiket + dokunmatik popover; 0.6 → etiket yok)", () => {
     expect(LOW_CONF_REVIEW_UPPER_BOUND).toBe(0.6);
+    expect(isLowConfidenceReview(0.35, 0.3)).toBe(true);
     expect(isLowConfidenceReview(0.394, 0.395)).toBe(false);
     expect(isLowConfidenceReview(0.395, 0.395)).toBe(true);
     expect(isLowConfidenceReview(0.45, 0.395)).toBe(true);
@@ -541,36 +547,48 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
     expect(screen.queryByTestId("det-card-1")).not.toBeInTheDocument();
     expect(screen.queryByTestId("low-conf-badge-1")).not.toBeInTheDocument();
 
-    // 0.45 -> tespit gösterilir, kusur kartında ve listede "Düşük güven: gözden geçirin" etiketi ve ipucu var
+    // 0.45 -> tespit gösterilir, kusur kartında ve listede "Düşük güven: gözden geçirin" etiketi ve dokunulabilir "i" popover düğmesi var
     expect(screen.getByTestId("det-card-2")).toBeInTheDocument();
     const listBadge = screen.getByTestId("low-conf-badge-2");
     expect(listBadge).toHaveTextContent(LOW_CONF_REVIEW_LABEL_TR);
-    expect(listBadge).toHaveAttribute("title", LOW_CONF_REVIEW_TOOLTIP_TR);
+    const infoBtn = screen.getByTestId("low-conf-info-btn-2");
+    expect(infoBtn).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("low-conf-popover-2")).not.toBeInTheDocument();
+
+    // "i" düğmesine dokunulduğunda popover açılır ve aria-describedby bağlanır
+    fireEvent.click(infoBtn);
+    expect(infoBtn).toHaveAttribute("aria-expanded", "true");
+    const popover = screen.getByTestId("low-conf-popover-2");
+    expect(popover).toHaveTextContent(LOW_CONF_REVIEW_TOOLTIP_TR);
+    expect(listBadge).toHaveAttribute("aria-describedby", popover.id);
+    expect(infoBtn).toHaveAttribute("aria-describedby", popover.id);
+
     const selectedBadge = screen.getByTestId("selected-low-conf-badge");
     expect(selectedBadge).toHaveTextContent(LOW_CONF_REVIEW_LABEL_TR);
-    expect(selectedBadge).toHaveAttribute("title", LOW_CONF_REVIEW_TOOLTIP_TR);
 
     // 0.6 -> tespit gösterilir ama düşük güven etiketi YOK
     expect(screen.getByTestId("det-card-3")).toBeInTheDocument();
     expect(screen.queryByTestId("low-conf-badge-3")).not.toBeInTheDocument();
 
-    // Yalnız 0.45 tespiti varken de GEÇTİ/KALDI kuralı değişmez -> KALDI
+    // Eşik 0.30'a indirildiğinde 0.35 güvenli tespit gösterilir ve "Düşük güven: gözden geçirin" etiketi alır
     useAppStore.setState({
+      confThreshold: 0.3,
       detectResult: {
         width: 1024,
         height: 1024,
         detections: [
           {
-            id: 2,
+            id: 4,
             cls: "spur",
             cls_id: 4,
-            conf: 0.45,
+            conf: 0.35,
             box: [50, 50, 90, 90],
           },
         ],
         timing: { pre_ms: 1, model_ms: 15, post_ms: 1, total_ms: 17 },
         backend: "ort-webgpu",
       },
+      selectedDetectionId: 4,
     });
     rerender(
       <DetectView
@@ -580,6 +598,69 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
         onInspectDetection={() => {}}
       />,
     );
+    expect(screen.getByTestId("det-card-4")).toBeInTheDocument();
+    expect(screen.getByTestId("low-conf-badge-4")).toHaveTextContent(
+      LOW_CONF_REVIEW_LABEL_TR,
+    );
     expect(screen.getByTestId("verdict-badge")).toHaveTextContent("KALDI");
+  });
+
+  it("9) Model sürümü (model_version) ve uygulama sürümü (version) ayrımı: model_version yoksa 'bilinmiyor' yazar, version'a düşmez", async () => {
+    expect(getModelVersion({ version: "1.1.0", model_version: "1.0.0" })).toBe(
+      "1.0.0",
+    );
+    expect(getModelVersion({ version: "1.1.0" })).toBe("bilinmiyor");
+    expect(getAppVersion({ version: "1.1.0", model_version: "1.0.0" })).toBe(
+      "1.1.0",
+    );
+
+    // a) model_version = "1.0.0" ve version = "1.1.0" iken Ayarlar ekranı
+    useAppStore.setState({
+      meta: {
+        ...FALLBACK_META,
+        version: "1.1.0",
+        model_version: "1.0.0",
+      },
+    });
+    const { rerender } = render(<SettingsView />);
+    expect(screen.getByTestId("settings-model-version")).toHaveTextContent(
+      "1.0.0",
+    );
+    expect(screen.getByTestId("settings-app-version")).toHaveTextContent(
+      "1.1.0",
+    );
+
+    // b) model_version alanı yokken Ayarlar ekranı "version"a düşmez, "bilinmiyor" yazar
+    const metaWithoutModelVer = {
+      ...FALLBACK_META,
+      version: "1.1.0",
+      model_version: undefined,
+    };
+    useAppStore.setState({ meta: metaWithoutModelVer });
+    rerender(<SettingsView />);
+    expect(screen.getByTestId("settings-model-version")).toHaveTextContent(
+      "bilinmiyor",
+    );
+    expect(screen.getByTestId("settings-app-version")).toHaveTextContent(
+      "1.1.0",
+    );
+
+    // c) PDF raporunda da model_version yoksa "model sürümü: bilinmiyor" yazar
+    const pdfBytes = await generateInspectionPdfBytes({
+      filename: "05_short.jpg",
+      meta: metaWithoutModelVer,
+      confThreshold: 0.395,
+      result: {
+        width: 1024,
+        height: 1024,
+        detections: [],
+        timing: { pre_ms: 1, model_ms: 10, post_ms: 1, total_ms: 12 },
+        backend: "ort-webgpu",
+      },
+      lang: "tr",
+    });
+    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(pdfBytes);
+    expect(decoded).toContain("model sürümü: bilinmiyor");
+    expect(decoded).toContain("uygulama sürümü: 1.1.0");
   });
 });
