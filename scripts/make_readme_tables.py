@@ -390,6 +390,24 @@ def build_edge_benchmark_table() -> str:
     return "\n".join(lines)
 
 
+def build_platform_drift_table() -> str:
+    """Tablo 7b: Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)."""
+    lines = [
+        "### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)",
+        "",
+        "GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
+        "",
+        "| Kapsam | Ort. \\|Δconf\\| | Maks. \\|Δconf\\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |",
+        "|---|---:|---:|---:|---:|---|",
+        "| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
+        "| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |",
+        "",
+        "> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def build_aoi_transfer_table() -> str:
     """Tablo 8: PCB-AoI Transfer Öğrenme Deneyi (Null Sonuç)."""
     csv_path = RESULTS_DIR / "aoi_transfer.csv"
@@ -459,6 +477,7 @@ def main() -> None:
         build_reliability_table(),
         build_xai_tables(),
         build_edge_benchmark_table(),
+        build_platform_drift_table(),
         build_aoi_transfer_table(),
     ]
 

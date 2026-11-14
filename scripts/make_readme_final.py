@@ -404,6 +404,17 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
         "",
         f"`conf ≥ 0.395` noktasındaki tüm FP32–INT8 farkları rastgele dağılmamıştır; Kart 05 şablonunda temiz kartta da yanlış alarm üreten 2 sabit `spurious_copper` arka plan konumunda ({b05_desc}) yoğunlaşmıştır.",
         "",
+        "### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)",
+        "",
+        "GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
+        "",
+        "| Kapsam | Ort. \\|Δconf\\| | Maks. \\|Δconf\\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |",
+        "|---|---:|---:|---:|---:|---|",
+        "| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
+        "| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |",
+        "",
+        "> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.",
+        "",
         "### Çevrimdışı Kullanım, PWA ve İlk İndirme Boyutu",
         "",
         f"- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**{precache_mb}**). Model açılışta kendiliğinden indirilmez.",
@@ -436,11 +447,12 @@ def _check_forbidden(markdown: str, everywhere_section: str) -> None:
         "<owner>",
         "<repo>",
         "yer tutucu",
+        "~0.01",
     ):
         if term in lower_all:
             raise ValueError(f"Yasak veya guncel olmayan ifade tespit edildi: {term!r}")
 
-    if "linux'ta ~0.01 güven kayması gözlendi (ci raporu)" in lower_all:
+    if "linux'ta" in lower_all and "güven kayması gözlendi (ci raporu)" in lower_all:
         raise ValueError("Eski Platform Paritesi Notu cumlesi kalmis")
 
     # Oracle P/R degerleri sadece Metodolojik Not (uyari) icinde gecmeli, baslik maddelerinde yer almamali
@@ -482,6 +494,13 @@ def build_final_readme_draft() -> str:
 
     draft_comment = "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->\n\n"
 
+    platform_note_line = (
+        "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). "
+        "GitHub runner (CI #2) üzerinde 9/10 val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = 0.020`, "
+        "maks. `0.136`, ort. `IoU = 0.982`, `0.395`'te tespit `42 → 45` (`+3`); tek görüntü testi `|Δ| = 0.0034` "
+        "(`0.827784` vs `0.831160`) ölçüldü. Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması."
+    )
+
     def _inject_reliability(text: str) -> str:
         rel_re = re.compile(
             r"### Güven aralığına göre kesinlik \(val ve test\).*?(?=\n\n---\n\n## 5\.)",
@@ -496,6 +515,13 @@ def build_final_readme_draft() -> str:
 
     if "## 7. Her yerde çalışır: web, masaüstü, Android" in raw_base:
         body = re.sub(r"^<!-- Bu taslak .*?-->\s*", "", raw_base, count=1, flags=re.DOTALL)
+        body = re.sub(
+            r"^> \*\*Platform Paritesi Notu:\*\*.*$",
+            lambda _m: platform_note_line,
+            body,
+            count=1,
+            flags=re.MULTILINE,
+        )
         body = _inject_reliability(body)
         sec7_re = re.compile(
             r"## 7\. Her yerde çalışır: web, masaüstü, Android.*?\n---(?=\n\n## 8\.)",
@@ -538,7 +564,7 @@ def build_final_readme_draft() -> str:
 
     platform_note_block = [
         "",
-        "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.",
+        platform_note_line,
     ]
 
     app_build_cmds = [

@@ -146,6 +146,17 @@ Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabi
 > - **TensorRT FP16 (GPU):** Model çıkarımını 1024'te **3.34 ms**'ye indirmiştir. Ancak uçtan uca sürede (12.19 ms) darboğaz modelden ziyade PyTorch/CPU ön ve son işleme (letterbox + NMS) kaymaktadır.
 > - **Kapsam:** Tüm değerler dizüstü bilgisayar donanımında ölçülmüştür; Jetson veya gömülü kenar cihaz iddiası yapılmamaktadır.
 
+### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)
+
+GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):
+
+| Kapsam | Ort. \|Δconf\| | Maks. \|Δconf\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |
+|---|---:|---:|---:|---:|---|
+| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |
+| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |
+
+> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
+
 ### Tablo 8: Endüstriyel PCB-AoI Veri Kümesine Transfer Öğrenme Deneyi (Test Seti, 3 Seed, last.pt)
 
 | Başlangıç Modeli | Seed | Eğitim Süresi (dk) | Test mAP50 | Test mAP50-95 | Bad_qiaojiao mAP50 | Bad_podu mAP50 |

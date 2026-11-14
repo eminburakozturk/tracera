@@ -31,7 +31,7 @@ Model seçiminde ve değerlendirmede aşırı iyimser tekil split yanılgısın�
 
 > **Metodolojik Not:** Test kartları (06 ve 10), 1024 kart bazlı CV'de en yüksek skoru alan Kat 5'in doğrulama kartları arasındaydı (0.9569 mAP50). Bu yüzden tek seferlik test skoru (0.9225) iyimser uçtadır; projenin ana iddiası **0.858 ± 0.152** CV ortalamasıdır. Ultralytics'in test için otomatik raporladığı P 0.9462 / R 0.8577, eşiği test setinin kendi F1 eğrisinden (0.569) seçtiği için bir üst sınırdır ("oracle eşik") ve başarı olarak raporlanmaz.
 
-> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.
+> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). GitHub runner (CI #2) üzerinde 9/10 val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = 0.020`, maks. `0.136`, ort. `IoU = 0.982`, `0.395`'te tespit `42 → 45` (`+3`); tek görüntü testi `|Δ| = 0.0034` (`0.827784` vs `0.831160`) ölçüldü. Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
 
 ---
 
@@ -258,9 +258,20 @@ Tarayıcı (`FP32 ONNX`) ile yerel masaüstü yan sunucusu (`OpenVINO INT8`) sı
 
 `conf ≥ 0.395` noktasındaki tüm FP32–INT8 farkları rastgele dağılmamıştır; Kart 05 şablonunda temiz kartta da yanlış alarm üreten 2 sabit `spurious_copper` arka plan konumunda (`conf=0.5108` @ (1606.5, 1072.9) ve `conf=0.4475` @ (1537.1, 1183.2)) yoğunlaşmıştır.
 
+### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)
+
+GitHub Actions Linux runner (`CI #2`, `33037a1`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):
+
+| Kapsam | Ort. \|Δconf\| | Maks. \|Δconf\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |
+|---|---:|---:|---:|---:|---|
+| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |
+| Tek görüntü testi (`val_05_missing_hole_01.jpg` maks. güven) | **0.0034** | **0.0034** | — | 3 → 3 (0) | Linux `0.827784` vs. Windows `0.831160` |
+
+> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
+
 ### Çevrimdışı Kullanım, PWA ve İlk İndirme Boyutu
 
-- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**1.10 MB**). Model açılışta kendiliğinden indirilmez.
+- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**2.83 MB**). Model açılışta kendiliğinden indirilmez.
 - **İlk tespitte çalışma zamanı indirmesi:** FP32 ONNX (**36.43 MB**) + WebGPU/tek iş parçacıklı WASM JSEP çalışma zamanı (**28.15 MB**) olmak üzere yaklaşık **~65 MB** CacheFirst stratejisiyle indirilir ve önbelleğe alınır. Kullanılmayan `tracera_1024_int8.onnx` üretim paketine (`dist/` ve `web_space/`) dahil edilmez.
 - **Çevrimdışı devam:** İlk tespit sonrasında internet kesilse bile tarayıcı içi tespit ("Cihazda") çevrimdışı çalışmaya devam eder.
 
