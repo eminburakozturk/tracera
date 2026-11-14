@@ -7,6 +7,7 @@ import {
   getClassDisplayName,
   PDF_MANDATORY_FOOTER_TR,
 } from "./v11Rules";
+import { fmtMs, fmtNum, fmtPct } from "./format";
 
 let cachedFontBytes: Uint8Array | null = null;
 
@@ -90,7 +91,7 @@ export async function generateInspectionPdfBytes(
   const classSummary = activeDetections
     .map(
       (d) =>
-        `#${d.id} ${getClassDisplayName(d.cls, lang, true)} (${d.cls}) ${(d.conf * 100).toFixed(1)}% [${d.box.map((v) => Math.round(v)).join(",")}]`,
+        `#${d.id} ${getClassDisplayName(d.cls, lang, true)} (${d.cls}) ${fmtPct(d.conf, 1, lang)} [${d.box.map((v) => Math.round(v)).join(",")}]`,
     )
     .join(" | ");
 
@@ -102,7 +103,7 @@ export async function generateInspectionPdfBytes(
     `Tarih: ${createdAt}`,
     `Model: ${input.meta.model} (${input.meta.imgsz}x${input.meta.imgsz}, model sürümü: ${modelVersion}, uygulama sürümü: ${appVersion})`,
     `Motor: ${input.result.backend}`,
-    `Güven Eşiği: ${input.confThreshold.toFixed(3)}`,
+    `Güven Eşiği: ${fmtNum(input.confThreshold, 3, lang)}`,
     `Karar: ${verdict} (${activeDetections.length} kusur)`,
     `Tespitler: ${classSummary || "Kusur bulunmadı"}`,
     `Türkçe Karakter Doğrulama: ğ ş ı İ ç ö ü Ğ Ş Ç Ö Ü`,
@@ -190,8 +191,8 @@ export async function generateInspectionPdfBytes(
   // Meta bilgiler
   const metaLines = [
     `Model: ${input.meta.model} (${input.meta.imgsz}×${input.meta.imgsz}, model sürümü: ${modelVersion} · uygulama sürümü: ${appVersion})`,
-    `Çıkarım Motoru: ${input.result.backend}   |   Model Süresi: ${input.result.timing.model_ms.toFixed(1)} ms   |   Toplam Süre: ${input.result.timing.total_ms.toFixed(1)} ms`,
-    `Güven Eşiği: ${input.confThreshold.toFixed(3)}   |   Tespit Edilen Kusur Sayısı: ${activeDetections.length}   |   Sonuç: ${verdict}`,
+    `Çıkarım Motoru: ${input.result.backend}   |   Model Süresi: ${fmtMs(input.result.timing.model_ms, 1, lang)}   |   Toplam Süre: ${fmtMs(input.result.timing.total_ms, 1, lang)}`,
+    `Güven Eşiği: ${fmtNum(input.confThreshold, 3, lang)}   |   Tespit Edilen Kusur Sayısı: ${activeDetections.length}   |   Sonuç: ${verdict}`,
   ];
 
   for (const line of metaLines) {
@@ -297,7 +298,7 @@ export async function generateInspectionPdfBytes(
       const trName = getClassDisplayName(det.cls, lang, true);
       page.drawText(`#${det.id}`, { x: 42, y, size: 8.5, font });
       page.drawText(`${trName} (${det.cls})`, { x: 80, y, size: 8.5, font });
-      page.drawText(`%${(det.conf * 100).toFixed(1)}`, {
+      page.drawText(fmtPct(det.conf, 1, lang), {
         x: 310,
         y,
         size: 8.5,
@@ -422,7 +423,7 @@ export async function generateCombinedBatchPdfBytes(params: {
       .map((d) => getClassDisplayName(d.cls, lang, true))
       .join(", ");
     page.drawText(
-      `• ${item.filename} — ${verdict} (${dets.length} kusur${clsNames ? `: ${clsNames}` : ""}) · ${item.result.timing.total_ms.toFixed(1)} ms`,
+      `• ${item.filename} — ${verdict} (${dets.length} kusur${clsNames ? `: ${clsNames}` : ""}) · ${fmtMs(item.result.timing.total_ms, 1, lang)}`,
       {
         x: 36,
         y,
