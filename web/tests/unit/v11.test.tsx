@@ -265,6 +265,15 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
     expect(getApprovedTimelineItems(null)).toEqual([]);
 
     const { rerender } = render(<AboutView initialTimeline={REAL_TIMELINE} />);
+    expect(screen.getByTestId("developer-avatar")).toHaveTextContent("EB");
+    expect(screen.getByTestId("developer-email-link")).toHaveAttribute(
+      "href",
+      "mailto:eminburak1410@gmail.com",
+    );
+    expect(screen.getByTestId("developer-linkedin-link")).toHaveAttribute(
+      "href",
+      "https://www.linkedin.com/in/emin-burak-%C3%B6zt%C3%BCrk-85a674395/",
+    );
     expect(screen.getByTestId("developer-timeline-card")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-item-1")).toHaveTextContent(
       REAL_TIMELINE.items[0].title,

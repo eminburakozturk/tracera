@@ -26,7 +26,7 @@ Diğer terimler: kusur, tespit, güven, eşik, ısı haritası, muayene, muayene
 results/*.csv, web/public/metrics.json, analysis.json, ve v1.1 için Sohbet 1'in üreteceği web/public/data/*.json (pr_curve_val, reliability_val, class_metrics, guide crops, timeline). Elle sayı yazılmaz. Demo kaydındaki FPS/ms kullanılmaz.
 
 ## Geliştirici sekmesi
-Emin Burak Öztürk · Yapay Zeka Operatörlüğü (Önlisans), Balıkesir Üniversitesi Balıkesir MYO · linkler: github.com/eminburakozturk, linkedin.com/in/emin-burak-öztürk, huggingface.co/ebboo. Telefon numarası YOK. E-posta ve fotoğraf: kullanıcı onayı bekleniyor (şimdilik yok; baş harf avatarı).
+Emin Burak Öztürk · Yapay Zeka Operatörlüğü (Önlisans), Balıkesir Üniversitesi Balıkesir MYO · linkler: github.com/eminburakozturk, https://www.linkedin.com/in/emin-burak-%C3%B6zt%C3%BCrk-85a674395/ (tam adres, kısaltma yok), huggingface.co/ebboo. Telefon numarası YOK. E-posta: eminburak1410@gmail.com (kullanıcı onayladı, 2026-11-14; mailto bağlantısı). Fotoğraf yok: baş harf avatarı "EB".
 Zaman çizelgesi: KARARLAR.md'den Claude'un onayladığı kısa başlıklar (timeline.json).
 
 ## Kalite

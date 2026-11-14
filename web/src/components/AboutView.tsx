@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Calendar, ExternalLink, Scale, ShieldAlert } from "lucide-react";
+import { Calendar, ExternalLink, Mail, Scale, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getApprovedTimelineItems } from "../lib/timeline";
 import { getClassColor, getClassDisplayName } from "../lib/v11Rules";
@@ -54,7 +54,7 @@ export function AboutView({ initialTimeline }: AboutViewProps) {
 
   return (
     <div className="space-y-5" data-testid="developer-view">
-      {/* Geliştirici Kartı (Fotoğraf / Telefon / E-posta YOK; baş harf avatarı EBÖ) */}
+      {/* Geliştirici Kartı (Fotoğraf / Telefon YOK; baş harf avatarı EB, e-posta mailto) */}
       <Card data-testid="developer-profile-card">
         <CardHeader>
           <CardTitle>{t("developer.title")}</CardTitle>
@@ -68,7 +68,7 @@ export function AboutView({ initialTimeline }: AboutViewProps) {
                 data-testid="developer-avatar"
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] font-mono text-sm font-bold text-[var(--accent-ink)]"
               >
-                EBÖ
+                EB
               </div>
               <div>
                 <h3 className="text-base font-bold text-[var(--text-primary)]">
@@ -83,22 +83,33 @@ export function AboutView({ initialTimeline }: AboutViewProps) {
 
             <div className="flex flex-wrap items-center gap-2">
               <a
+                href="mailto:eminburak1410@gmail.com"
+                data-testid="developer-email-link"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:border-[var(--accent)]"
+              >
+                <Mail className="h-3.5 w-3.5 shrink-0 text-[var(--accent-ink)]" />
+                <span>eminburak1410@gmail.com</span>
+              </a>
+              <a
                 href="https://github.com/eminburakozturk"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:border-[var(--accent)]"
               >
                 <span>github.com/eminburakozturk</span>
-                <ExternalLink className="h-3.5 w-3.5 text-[var(--accent-ink)]" />
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--accent-ink)]" />
               </a>
               <a
-                href="https://linkedin.com/in/emin-burak-öztürk"
+                href="https://www.linkedin.com/in/emin-burak-%C3%B6zt%C3%BCrk-85a674395/"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:border-[var(--accent)]"
+                data-testid="developer-linkedin-link"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium break-all text-[var(--text-primary)] hover:border-[var(--accent)]"
               >
-                <span>linkedin.com/in/emin-burak-öztürk</span>
-                <ExternalLink className="h-3.5 w-3.5 text-[var(--accent-ink)]" />
+                <span>
+                  https://www.linkedin.com/in/emin-burak-%C3%B6zt%C3%BCrk-85a674395/
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--accent-ink)]" />
               </a>
               <a
                 href="https://huggingface.co/ebboo"
@@ -107,7 +118,7 @@ export function AboutView({ initialTimeline }: AboutViewProps) {
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] hover:border-[var(--accent)]"
               >
                 <span>huggingface.co/ebboo</span>
-                <ExternalLink className="h-3.5 w-3.5 text-[var(--accent-ink)]" />
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--accent-ink)]" />
               </a>
             </div>
           </div>
