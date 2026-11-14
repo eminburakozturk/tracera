@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from tracera_core.config import (
     CLASS_COLORS,
+    CLASS_DISPLAY_NAMES_TR,
     CLASS_NAMES,
     DEFAULT_CONF,
     DEFAULT_IOU_NMS,
     IMGSZ,
     LETTERBOX_PAD,
+    LOW_CONF_REVIEW_NOTE_TR,
+    LOW_CONF_REVIEW_UPPER_BOUND,
     META_PATH,
     OPENVINO_MODEL_PATH,
     PYTORCH_MODEL_PATH,
@@ -45,11 +48,14 @@ from tracera_core.schemas import Detection, DetectResult, ExplainResult, Timing
 
 __all__ = [
     "CLASS_COLORS",
+    "CLASS_DISPLAY_NAMES_TR",
     "CLASS_NAMES",
     "DEFAULT_CONF",
     "DEFAULT_IOU_NMS",
     "IMGSZ",
     "LETTERBOX_PAD",
+    "LOW_CONF_REVIEW_NOTE_TR",
+    "LOW_CONF_REVIEW_UPPER_BOUND",
     "META_PATH",
     "MODELS",
     "OPENVINO_MODEL_PATH",

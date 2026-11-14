@@ -34,6 +34,8 @@ DEFAULT_CONF = 0.395
 DEFAULT_IOU_NMS = 0.7
 LETTERBOX_PAD = 114
 APP_VERSION = "1.1.0"
+LOW_CONF_REVIEW_UPPER_BOUND = 0.6
+LOW_CONF_REVIEW_NOTE_TR = "Düşük güven: gözden geçirin"
 
 CLASS_NAMES: dict[int, str] = {
     0: "missing_hole",
@@ -42,6 +44,15 @@ CLASS_NAMES: dict[int, str] = {
     3: "short",
     4: "spur",
     5: "spurious_copper",
+}
+
+CLASS_DISPLAY_NAMES_TR: dict[str, str] = {
+    "missing_hole": "Eksik delik",
+    "mouse_bite": "Fare ısırığı (kenar çentiği)",
+    "open_circuit": "Açık devre",
+    "short": "Kısa devre",
+    "spur": "Çıkıntı",
+    "spurious_copper": "İstenmeyen bakır",
 }
 
 CLASS_COLORS: dict[int, tuple[int, int, int]] = {
