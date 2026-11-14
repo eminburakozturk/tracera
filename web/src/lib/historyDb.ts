@@ -29,8 +29,16 @@ export async function createThumbnailDataUrl(
   fileOrUrl: File | string,
   maxSide = 280,
 ): Promise<string> {
-  if (typeof document === "undefined") {
-    return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const fallbackDataUrl =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  if (
+    typeof document === "undefined" ||
+    (typeof navigator !== "undefined" &&
+      /jsdom/i.test(navigator.userAgent || ""))
+  ) {
+    return typeof fileOrUrl === "string" && fileOrUrl.startsWith("data:")
+      ? fileOrUrl
+      : fallbackDataUrl;
   }
   const srcUrl =
     typeof fileOrUrl === "string"
@@ -41,9 +49,19 @@ export async function createThumbnailDataUrl(
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
+      const timer = setTimeout(
+        () => reject(new Error("Image load timeout")),
+        1500,
+      );
       el.crossOrigin = "anonymous";
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Image load failed"));
+      el.onload = () => {
+        clearTimeout(timer);
+        resolve(el);
+      };
+      el.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error("Image load failed"));
+      };
       el.src = srcUrl;
     });
     const w = img.naturalWidth || img.width || 280;

@@ -38,7 +38,7 @@ export async function loadTurkishFontBytes(): Promise<Uint8Array> {
   for (const p of candidates) {
     if (fsMod.existsSync(p)) {
       const buf = fsMod.readFileSync(p);
-      cachedFontBytes = new Uint8Array(buf);
+      cachedFontBytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
       return cachedFontBytes;
     }
   }
@@ -117,15 +117,15 @@ export async function generateInspectionPdfBytes(
   ]);
 
   // Sıkıştırılmamış UTF-8 özet akışı (PDF ayrıştırıcıları ve metin doğrulama için)
-  const rawUtf8Bytes = new TextEncoder().encode(fullTextSummary);
-  const rawStream = pdfDoc.context.flateStream(rawUtf8Bytes);
+  const rawUtf8Bytes = Uint8Array.from(
+    new TextEncoder().encode(fullTextSummary),
+  );
   const rawStreamRef = pdfDoc.context.register(
     pdfDoc.context.stream(rawUtf8Bytes, {
       Type: PDFName.of("Metadata"),
       Subtype: PDFName.of("TraceraSummary"),
     }),
   );
-  void rawStream;
   pdfDoc.catalog.set(PDFName.of("TraceraReportText"), rawStreamRef);
   pdfDoc.catalog.set(
     PDFName.of("TraceraVerdict"),

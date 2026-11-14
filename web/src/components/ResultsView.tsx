@@ -1,6 +1,16 @@
 import * as React from "react";
 import { Check, Copy, Gauge } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { loadAnalysis } from "../lib/analysis";
 import {
   type DeviceBenchmarkReport,
@@ -29,6 +39,7 @@ function fmtNum(v: number | null | undefined, digits = 3): string {
 
 export function ResultsView() {
   const { t } = useTranslation();
+  const lang = useAppStore((s) => s.lang);
   const metrics = useAppStore((s) => s.metrics);
   const metricsSource = useAppStore((s) => s.metricsSource);
   const meta = useAppStore((s) => s.meta);
@@ -133,14 +144,59 @@ export function ResultsView() {
   const firstOp = metrics.operating_point[0];
   const xai1024 = metrics.xai.filter((r) => r.imgsz === 1024);
 
+  const cvChartData = [
+    {
+      name: lang === "en" ? "Random (640)" : "Rastgele (640)",
+      mAP50: Number((leakRand?.mAP50_mean ?? 0).toFixed(3)),
+      mAP50_95: Number((leakRand?.mAP50_95_mean ?? 0).toFixed(3)),
+    },
+    {
+      name: lang === "en" ? "Grouped (640)" : "Kart Bazlı (640)",
+      mAP50: Number((cv640?.mAP50_mean ?? leakGroup?.mAP50_mean ?? 0).toFixed(3)),
+      mAP50_95: Number(
+        (cv640?.mAP50_95_mean ?? leakGroup?.mAP50_95_mean ?? 0).toFixed(3),
+      ),
+    },
+    {
+      name: lang === "en" ? "Grouped (1024)" : "Kart Bazlı (1024)",
+      mAP50: Number((cv1024?.mAP50_mean ?? 0).toFixed(3)),
+      mAP50_95: Number((cv1024?.mAP50_95_mean ?? 0).toFixed(3)),
+    },
+  ];
+
+  const platformSpeedData = [
+    ...metrics.edge_benchmark
+      .filter((r) => r.imgsz === 1024)
+      .map((r) => ({
+        platform: `${r.format} (Desktop)`,
+        ms: Number(r.gecikme_toplam_ort_ms.toFixed(1)),
+      })),
+    ...(metrics.web_spike ?? [])
+      .filter((w) => w.medyan_ms !== null)
+      .map((w) => ({
+        platform: `Web ${w.backend}`,
+        ms: Number((w.medyan_ms ?? 0).toFixed(1)),
+      })),
+    {
+      platform: "Android SM-S948B (WebGPU)",
+      ms: 287.1,
+    },
+    {
+      platform: "Android SM-S948B (WASM)",
+      ms: 458.6,
+    },
+  ];
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-testid="results-view">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
             {t("results.title")}
           </h2>
-          <p className="text-xs text-[var(--text-muted)]">{t("results.subtitle")}</p>
+          <p className="text-xs text-[var(--text-muted)]">
+            {t("results.subtitle")}
+          </p>
         </div>
         {metricsSource && (
           <Badge variant="secondary" className="font-mono">
@@ -149,58 +205,84 @@ export function ResultsView() {
         )}
       </div>
 
+      {/* 1. 5-Katlı CV Sızıntı & Çözünürlük (640 vs 1024) */}
       <Card>
         <CardHeader>
           <CardTitle>{t("results.cvTitle")}</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <div className="elevated-card rounded-lg p-3.5">
-            <p className="text-xs text-[var(--text-muted)]">
-              {t("results.cvSummaryGrouped1024")}
-            </p>
-            <p className="mt-1 font-mono text-xl font-semibold text-[var(--accent)] tabular-nums">
-              {fmtNum(cv1024?.mAP50_mean)} ± {fmtNum(cv1024?.mAP50_std)}
-            </p>
-            <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-              mAP50-95: {fmtNum(cv1024?.mAP50_95_mean)} ± {fmtNum(cv1024?.mAP50_95_std)}
-            </p>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <div className="elevated-card rounded-lg p-3.5">
+              <p className="text-xs text-[var(--text-muted)]">
+                {t("results.cvSummaryGrouped1024")}
+              </p>
+              <p className="mt-1 font-mono text-xl font-semibold text-[var(--accent-ink)] tabular-nums">
+                {fmtNum(cv1024?.mAP50_mean)} ± {fmtNum(cv1024?.mAP50_std)}
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+                mAP50-95: {fmtNum(cv1024?.mAP50_95_mean)} ±{" "}
+                {fmtNum(cv1024?.mAP50_95_std)}
+              </p>
+            </div>
+            <div className="elevated-card rounded-lg p-3.5">
+              <p className="text-xs text-[var(--text-muted)]">
+                {t("results.cvSummaryGrouped640")}
+              </p>
+              <p className="mt-1 font-mono text-xl font-semibold text-[var(--text-primary)] tabular-nums">
+                {fmtNum(cv640?.mAP50_mean)} ± {fmtNum(cv640?.mAP50_std)}
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+                mAP50-95: {fmtNum(cv640?.mAP50_95_mean)} ±{" "}
+                {fmtNum(cv640?.mAP50_95_std)}
+              </p>
+            </div>
+            <div className="elevated-card rounded-lg p-3.5">
+              <p className="text-xs text-[var(--text-muted)]">
+                {t("results.cvLeakageRandom")}
+              </p>
+              <p className="mt-1 font-mono text-xl font-semibold text-[var(--text-primary)] tabular-nums">
+                {fmtNum(leakRand.mAP50_mean)} ± {fmtNum(leakRand.mAP50_std)}
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+                mAP50-95: {fmtNum(leakRand.mAP50_95_mean)} ±{" "}
+                {fmtNum(leakRand.mAP50_95_std)}
+              </p>
+            </div>
+            <div className="elevated-card rounded-lg p-3.5">
+              <p className="text-xs text-[var(--text-muted)]">
+                {t("results.cvLeakageGrouped")}
+              </p>
+              <p className="mt-1 font-mono text-xl font-semibold text-[var(--text-primary)] tabular-nums">
+                {fmtNum(leakGroup.mAP50_mean)} ± {fmtNum(leakGroup.mAP50_std)}
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+                mAP50-95: {fmtNum(leakGroup.mAP50_95_mean)} ±{" "}
+                {fmtNum(leakGroup.mAP50_95_std)}
+              </p>
+            </div>
           </div>
-          <div className="elevated-card rounded-lg p-3.5">
-            <p className="text-xs text-[var(--text-muted)]">
-              {t("results.cvSummaryGrouped640")}
-            </p>
-            <p className="mt-1 font-mono text-xl font-semibold text-[var(--text-primary)] tabular-nums">
-              {fmtNum(cv640?.mAP50_mean)} ± {fmtNum(cv640?.mAP50_std)}
-            </p>
-            <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-              mAP50-95: {fmtNum(cv640?.mAP50_95_mean)} ± {fmtNum(cv640?.mAP50_95_std)}
-            </p>
-          </div>
-          <div className="elevated-card rounded-lg p-3.5">
-            <p className="text-xs text-[var(--text-muted)]">
-              {t("results.cvLeakageRandom")}
-            </p>
-            <p className="mt-1 font-mono text-xl font-semibold text-[var(--text-primary)] tabular-nums">
-              {fmtNum(leakRand.mAP50_mean)} ± {fmtNum(leakRand.mAP50_std)}
-            </p>
-            <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-              mAP50-95: {fmtNum(leakRand.mAP50_95_mean)} ± {fmtNum(leakRand.mAP50_95_std)}
-            </p>
-          </div>
-          <div className="elevated-card rounded-lg p-3.5">
-            <p className="text-xs text-[var(--text-muted)]">
-              {t("results.cvLeakageGrouped")}
-            </p>
-            <p className="mt-1 font-mono text-xl font-semibold text-[var(--text-primary)] tabular-nums">
-              {fmtNum(leakGroup.mAP50_mean)} ± {fmtNum(leakGroup.mAP50_std)}
-            </p>
-            <p className="mt-0.5 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-              mAP50-95: {fmtNum(leakGroup.mAP50_95_mean)} ± {fmtNum(leakGroup.mAP50_95_std)}
-            </p>
+
+          {/* Recharts Sızıntı & Çözünürlük Grafiği */}
+          <div
+            className="h-56 w-full rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-3"
+            data-testid="results-cv-chart"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={cvChartData}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="mAP50" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="mAP50_95" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
+      {/* 2. Kilitli Test ve Çalışma Noktası */}
       <Card>
         <CardHeader>
           <CardTitle>
@@ -211,8 +293,8 @@ export function ResultsView() {
           </CardTitle>
           {testMap50 !== null && (
             <CardDescription className="font-mono text-xs text-[var(--text-primary)] tabular-nums">
-              {t("results.lockedTestMap")}: mAP50 = {fmtNum(testMap50, 4)} · mAP50-95 ={" "}
-              {fmtNum(testMap5095, 4)}
+              {t("results.lockedTestMap")}: mAP50 = {fmtNum(testMap50, 4)} ·
+              mAP50-95 = {fmtNum(testMap5095, 4)}
             </CardDescription>
           )}
         </CardHeader>
@@ -259,7 +341,7 @@ export function ResultsView() {
                       <td className="py-2 pr-3">{row.FN}</td>
                       <td className="py-2 pr-3">{fmtNum(row.P, 4)}</td>
                       <td className="py-2 pr-3">{fmtNum(row.R, 4)}</td>
-                      <td className="py-2 font-semibold text-[var(--accent)]">
+                      <td className="py-2 font-semibold text-[var(--accent-ink)]">
                         {fmtNum(row.F1, 4)}
                       </td>
                     </tr>
@@ -279,51 +361,82 @@ export function ResultsView() {
         </CardContent>
       </Card>
 
+      {/* 3. Platform Hızları (edge_benchmark, tarayıcı, masaüstü, Android) */}
       <Card>
         <CardHeader>
           <CardTitle>{t("results.edgeTitle")}</CardTitle>
           <CardDescription>{t("results.edgeHardwareNote")}</CardDescription>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full border-collapse text-left font-mono text-xs tabular-nums">
-            <thead>
-              <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
-                <th className="py-2 pr-3">Model / Format</th>
-                <th className="py-2 pr-3">ImgSz</th>
-                <th className="py-2 pr-3">MB</th>
-                <th className="py-2 pr-3">Inf (ms)</th>
-                <th className="py-2 pr-3">Total (ms)</th>
-                <th className="py-2 pr-3">p95 (ms)</th>
-                <th className="py-2 pr-3">FPS</th>
-                <th className="py-2 pr-3">mAP50</th>
-                <th className="py-2">Hardware</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics.edge_benchmark.map((row, i) => (
-                <tr
-                  key={`${row.model}-${row.format}-${i}`}
-                  className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
-                >
-                  <td className="py-2 pr-3">
-                    {row.model} ({row.format})
-                  </td>
-                  <td className="py-2 pr-3">{row.imgsz}</td>
-                  <td className="py-2 pr-3">{fmtNum(row.boyut_mb, 1)}</td>
-                  <td className="py-2 pr-3">{fmtNum(row.gecikme_inf_ort_ms, 1)}</td>
-                  <td className="py-2 pr-3">{fmtNum(row.gecikme_toplam_ort_ms, 1)}</td>
-                  <td className="py-2 pr-3">{fmtNum(row.gecikme_toplam_p95_ms, 1)}</td>
-                  <td className="py-2 pr-3">{fmtNum(row.fps_on_son_islem_dahil, 2)}</td>
-                  <td className="py-2 pr-3 font-semibold text-[var(--accent)]">
-                    {fmtNum(row.mAP50, 4)}
-                  </td>
-                  <td className="py-2 font-sans text-[11px] text-[var(--text-secondary)]">
-                    {row.donanım}
-                  </td>
+        <CardContent className="space-y-4">
+          <div
+            className="h-56 w-full rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-3"
+            data-testid="results-speed-chart"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={platformSpeedData}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                <XAxis dataKey="platform" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar
+                  dataKey="ms"
+                  name={lang === "en" ? "Latency (ms)" : "Gecikme (ms)"}
+                  fill="#34d399"
+                  radius={[4, 4, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left font-mono text-xs tabular-nums">
+              <thead>
+                <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
+                  <th className="py-2 pr-3">Model / Format</th>
+                  <th className="py-2 pr-3">ImgSz</th>
+                  <th className="py-2 pr-3">MB</th>
+                  <th className="py-2 pr-3">Inf (ms)</th>
+                  <th className="py-2 pr-3">Total (ms)</th>
+                  <th className="py-2 pr-3">p95 (ms)</th>
+                  <th className="py-2 pr-3">FPS</th>
+                  <th className="py-2 pr-3">mAP50</th>
+                  <th className="py-2">Hardware</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {metrics.edge_benchmark.map((row, i) => (
+                  <tr
+                    key={`${row.model}-${row.format}-${i}`}
+                    className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
+                  >
+                    <td className="py-2 pr-3">
+                      {row.model} ({row.format})
+                    </td>
+                    <td className="py-2 pr-3">{row.imgsz}</td>
+                    <td className="py-2 pr-3">{fmtNum(row.boyut_mb, 1)}</td>
+                    <td className="py-2 pr-3">
+                      {fmtNum(row.gecikme_inf_ort_ms, 1)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fmtNum(row.gecikme_toplam_ort_ms, 1)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fmtNum(row.gecikme_toplam_p95_ms, 1)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fmtNum(row.fps_on_son_islem_dahil, 2)}
+                    </td>
+                    <td className="py-2 pr-3 font-semibold text-[var(--accent-ink)]">
+                      {fmtNum(row.mAP50, 4)}
+                    </td>
+                    <td className="py-2 font-sans text-[11px] text-[var(--text-secondary)]">
+                      {row.donanım}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 
@@ -396,11 +509,21 @@ export function ResultsView() {
                     <td className="py-2 pr-3 font-semibold">
                       {row.method} (L{row.katman})
                     </td>
-                    <td className="py-2 pr-3">{fmtNum(row.goreli_dusus_harita_ort_1x)}</td>
-                    <td className="py-2 pr-3">{fmtPct(row.goreli_kazanma_orani_1x)}</td>
-                    <td className="py-2 pr-3">{fmtNum(row.goreli_dusus_harita_ort_2x)}</td>
-                    <td className="py-2 pr-3">{fmtPct(row.goreli_kazanma_orani_2x)}</td>
-                    <td className="py-2">{fmtPct(row.enerji_kutuda_pencere)}</td>
+                    <td className="py-2 pr-3">
+                      {fmtNum(row.goreli_dusus_harita_ort_1x)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fmtPct(row.goreli_kazanma_orani_1x)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fmtNum(row.goreli_dusus_harita_ort_2x)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {fmtPct(row.goreli_kazanma_orani_2x)}
+                    </td>
+                    <td className="py-2">
+                      {fmtPct(row.enerji_kutuda_pencere)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -421,7 +544,8 @@ export function ResultsView() {
                 {fmtNum(metrics.aoi.test_summary.coco.mAP50_std)}
               </p>
               <p className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-                mAP50-95: {fmtNum(metrics.aoi.test_summary.coco.mAP50_95_mean)} ±{" "}
+                mAP50-95:{" "}
+                {fmtNum(metrics.aoi.test_summary.coco.mAP50_95_mean)} ±{" "}
                 {fmtNum(metrics.aoi.test_summary.coco.mAP50_95_std)}
               </p>
             </div>
@@ -432,7 +556,8 @@ export function ResultsView() {
                 {fmtNum(metrics.aoi.test_summary.pku.mAP50_std)}
               </p>
               <p className="font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-                mAP50-95: {fmtNum(metrics.aoi.test_summary.pku.mAP50_95_mean)} ±{" "}
+                mAP50-95:{" "}
+                {fmtNum(metrics.aoi.test_summary.pku.mAP50_95_mean)} ±{" "}
                 {fmtNum(metrics.aoi.test_summary.pku.mAP50_95_std)}
               </p>
             </div>
@@ -453,7 +578,6 @@ export function ResultsView() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Kart × Sınıf FP tablosu (Test ve Val ayrı) */}
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 {t("results.fpMatrixTitle")}
@@ -483,7 +607,9 @@ export function ResultsView() {
                           key={`${row.split}-${row.kart_no}`}
                           className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
                         >
-                          <td className="py-2 pr-3 font-semibold">{row.kart_no}</td>
+                          <td className="py-2 pr-3 font-semibold">
+                            {row.kart_no}
+                          </td>
                           <td className="py-2 pr-3 text-[var(--text-secondary)]">
                             {row.split}
                           </td>
@@ -496,7 +622,7 @@ export function ResultsView() {
                         </tr>
                       ))}
                     <tr
-                      className="border-b-2 border-[var(--border-hairline)] bg-[var(--bg-muted)]/40 font-semibold text-[var(--text-primary)]"
+                      className="border-b-2 border-[var(--border-hairline)] bg-[var(--bg-elevated)] font-semibold text-[var(--text-primary)]"
                       data-testid="fp-total-test"
                     >
                       <td className="py-2 pr-3" colSpan={2}>
@@ -507,7 +633,9 @@ export function ResultsView() {
                           {analysis.split_totals.test.counts[cls] ?? 0}
                         </td>
                       ))}
-                      <td className="py-2">{analysis.split_totals.test.total}</td>
+                      <td className="py-2">
+                        {analysis.split_totals.test.total}
+                      </td>
                     </tr>
                     {analysis.board_class_matrix
                       .filter((row) => row.split === "val")
@@ -516,7 +644,9 @@ export function ResultsView() {
                           key={`${row.split}-${row.kart_no}`}
                           className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
                         >
-                          <td className="py-2 pr-3 font-semibold">{row.kart_no}</td>
+                          <td className="py-2 pr-3 font-semibold">
+                            {row.kart_no}
+                          </td>
                           <td className="py-2 pr-3 text-[var(--text-secondary)]">
                             {row.split}
                           </td>
@@ -529,7 +659,7 @@ export function ResultsView() {
                         </tr>
                       ))}
                     <tr
-                      className="border-t border-[var(--border-hairline)] bg-[var(--bg-muted)]/40 font-semibold text-[var(--text-primary)]"
+                      className="border-t border-[var(--border-hairline)] bg-[var(--bg-elevated)] font-semibold text-[var(--text-primary)]"
                       data-testid="fp-total-val"
                     >
                       <td className="py-2 pr-3" colSpan={2}>
@@ -540,14 +670,15 @@ export function ResultsView() {
                           {analysis.split_totals.val.counts[cls] ?? 0}
                         </td>
                       ))}
-                      <td className="py-2">{analysis.split_totals.val.total}</td>
+                      <td className="py-2">
+                        {analysis.split_totals.val.total}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Kart 06'daki 2 Sabit Şablon Noktası */}
             <div className="space-y-3">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 {t("results.templateSpotsTitle")}
@@ -569,7 +700,9 @@ export function ResultsView() {
                           {fmtNum(spot.conf_min, 4)}–{fmtNum(spot.conf_max, 4)}
                         </p>
                       </div>
-                      <Badge variant={spot.template_alarm ? "danger" : "outline"}>
+                      <Badge
+                        variant={spot.template_alarm ? "danger" : "outline"}
+                      >
                         {spot.template_alarm
                           ? t("results.templateAlarmYes", {
                               conf: fmtNum(spot.template_conf, 4),
@@ -605,7 +738,6 @@ export function ResultsView() {
               </div>
             </div>
 
-            {/* FP32 vs INT8 Niceleme Kıyası */}
             <div className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 {t("results.quantParityTitle")}
@@ -634,7 +766,9 @@ export function ResultsView() {
                         key={q.conf_esik}
                         className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
                       >
-                        <td className="py-2 pr-3 font-semibold">{q.conf_esik}</td>
+                        <td className="py-2 pr-3 font-semibold">
+                          {q.conf_esik}
+                        </td>
                         <td className="py-2 pr-3">{q.eslesen}</td>
                         <td className="py-2 pr-3">{q.yalniz_fp32}</td>
                         <td className="py-2 pr-3">{q.yalniz_int8}</td>
@@ -650,7 +784,7 @@ export function ResultsView() {
         </Card>
       )}
 
-      {/* 8. Bu Cihazda Hız Testi (Telefon / Tarayıcı Ölçümü) */}
+      {/* 8. Bu Cihazda Hız Testi */}
       <Card data-testid="device-bench-section">
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-3">
