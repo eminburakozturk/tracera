@@ -1,0 +1,74 @@
+{
+  "model": "yolo11s",
+  "weights": "runs/detect/g_y11s_1024_full/weights/last.pt",
+  "split": "val",
+  "imgsz": 1024,
+  "conf_threshold": 0.395,
+  "iou_threshold": 0.5,
+  "total_detections": 530,
+  "total_TP": 514,
+  "total_FP": 16,
+  "overall_precision": 0.9698,
+  "bins": [
+    {
+      "bin": "0.395-0.5",
+      "min": 0.395,
+      "max": 0.5,
+      "n": 4,
+      "TP": 4,
+      "FP": 0,
+      "precision": 1.0,
+      "mean_conf": 0.4478
+    },
+    {
+      "bin": "0.5-0.6",
+      "min": 0.5,
+      "max": 0.6,
+      "n": 13,
+      "TP": 11,
+      "FP": 2,
+      "precision": 0.8462,
+      "mean_conf": 0.5565
+    },
+    {
+      "bin": "0.6-0.7",
+      "min": 0.6,
+      "max": 0.7,
+      "n": 20,
+      "TP": 18,
+      "FP": 2,
+      "precision": 0.9,
+      "mean_conf": 0.6507
+    },
+    {
+      "bin": "0.7-0.8",
+      "min": 0.7,
+      "max": 0.8,
+      "n": 253,
+      "TP": 247,
+      "FP": 6,
+      "precision": 0.9763,
+      "mean_conf": 0.7732
+    },
+    {
+      "bin": "0.8-0.9",
+      "min": 0.8,
+      "max": 0.9,
+      "n": 240,
+      "TP": 234,
+      "FP": 6,
+      "precision": 0.975,
+      "mean_conf": 0.8224
+    },
+    {
+      "bin": "0.9-1.0",
+      "min": 0.9,
+      "max": 1.0,
+      "n": 0,
+      "TP": 0,
+      "FP": 0,
+      "precision": null,
+      "mean_conf": null
+    }
+  ]
+}
