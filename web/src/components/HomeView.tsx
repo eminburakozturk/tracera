@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { VAL_EXAMPLES, type ValExampleItem } from "../fixtures";
+import { fmtMeanStd, fmtMs, fmtNum } from "../lib/format";
 import { listHistoryRecords } from "../lib/historyDb";
+import { selectOpenVinoInt8Row } from "../lib/metrics";
 import { cn } from "../lib/utils";
 import { getClassColor, getClassDisplayName } from "../lib/v11Rules";
 import { useAppStore } from "../store/useAppStore";
@@ -67,11 +69,12 @@ export function HomeView({
 
   const cv1024 = metrics?.cv.resolution_summary["1024_last"];
   const opTest = metrics?.operating_point.find((r) => r.split === "test");
-  const ovInt8Row = metrics?.edge_benchmark.find((r) =>
-    r.format.toLowerCase().includes("int8"),
-  );
-  const webGpuRow = metrics?.web_spike?.find((r) =>
-    r.backend.toLowerCase().includes("webgpu"),
+  const ovInt8Row = selectOpenVinoInt8Row(metrics?.edge_benchmark);
+  const webGpuRow = metrics?.web_spike?.find(
+    (r) =>
+      r.backend.toLowerCase().includes("webgpu") &&
+      r.model === "FP32 ONNX" &&
+      r.medyan_ms !== null,
   );
 
   const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -221,15 +224,13 @@ export function HomeView({
                 className="mt-1.5 font-mono text-2xl font-bold text-[var(--accent-ink)] tabular-nums"
                 data-testid="home-metric-cv"
               >
-                {cv1024
-                  ? `${cv1024.mAP50_mean.toFixed(3)} ± ${cv1024.mAP50_std.toFixed(3)}`
-                  : "0.858 ± 0.152"}
+                {cv1024 ? fmtMeanStd(cv1024.mAP50_mean, cv1024.mAP50_std) : "—"}
               </p>
               <p className="mt-1 font-mono text-xs text-[var(--text-muted)] tabular-nums">
                 mAP50-95:{" "}
                 {cv1024
-                  ? `${cv1024.mAP50_95_mean.toFixed(3)} ± ${cv1024.mAP50_95_std.toFixed(3)}`
-                  : "0.493 ± 0.085"}
+                  ? fmtMeanStd(cv1024.mAP50_95_mean, cv1024.mAP50_95_std)
+                  : "—"}
               </p>
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                 {t("home.metricCvSub")}
@@ -251,11 +252,11 @@ export function HomeView({
                 className="mt-1.5 font-mono text-2xl font-bold text-[var(--text-primary)] tabular-nums"
                 data-testid="home-metric-test"
               >
-                {opTest ? opTest.F1.toFixed(4) : "0.8101"}
+                {opTest ? fmtNum(opTest.F1, 3) : "—"}
               </p>
               <p className="mt-1 font-mono text-xs text-[var(--text-muted)] tabular-nums">
-                P: {opTest ? opTest.P.toFixed(4) : "0.7455"} · R:{" "}
-                {opTest ? opTest.R.toFixed(4) : "0.8870"}
+                P: {opTest ? fmtNum(opTest.P, 3) : "—"} · R:{" "}
+                {opTest ? fmtNum(opTest.R, 3) : "—"}
               </p>
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                 {t("home.metricTestSub")}
@@ -277,15 +278,15 @@ export function HomeView({
                 className="mt-1.5 font-mono text-2xl font-bold text-[var(--text-primary)] tabular-nums"
                 data-testid="home-metric-speed"
               >
-                {ovInt8Row
-                  ? `${ovInt8Row.gecikme_toplam_ort_ms.toFixed(1)} ms`
-                  : "145.7 ms"}
+                {ovInt8Row ? fmtMs(ovInt8Row.gecikme_inf_medyan_ms) : "—"}
               </p>
               <p className="mt-1 font-mono text-xs text-[var(--text-muted)] tabular-nums">
-                WebGPU:{" "}
+                {ovInt8Row
+                  ? `${lang === "en" ? "Total incl. pre/post" : "Ön/son işlem dahil"}: ${fmtMs(ovInt8Row.gecikme_toplam_medyan_ms)}`
+                  : "—"}
                 {webGpuRow && webGpuRow.medyan_ms !== null
-                  ? `${webGpuRow.medyan_ms.toFixed(1)} ms`
-                  : "54.7 ms"}
+                  ? ` · WebGPU (${lang === "en" ? "browser" : "tarayıcı"}): ${fmtMs(webGpuRow.medyan_ms)}`
+                  : ""}
               </p>
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                 {t("home.metricSpeedSub")}

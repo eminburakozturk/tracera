@@ -24,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { fmtNum, fmtPct } from "../lib/format";
 
 interface GuideViewProps {
   initialGuideIndex?: GuideIndexData | null;
@@ -191,11 +192,11 @@ export function GuideView({
                           {t("guide.valMetrics")}
                         </p>
                         <p className="font-semibold text-[var(--text-primary)]">
-                          F1 {m.val.F1.toFixed(3)}
+                          F1 {fmtNum(m.val.F1, 3)}
                         </p>
                         <p className="text-[10px] text-[var(--text-secondary)]">
-                          P {(m.val.P * 100).toFixed(0)}% · R{" "}
-                          {(m.val.R * 100).toFixed(0)}%
+                          P {fmtPct(m.val.P, 0)} · R{" "}
+                          {fmtPct(m.val.R, 0)}
                         </p>
                       </div>
                       <div>
@@ -203,11 +204,11 @@ export function GuideView({
                           {t("guide.testMetrics")}
                         </p>
                         <p className="font-semibold text-[var(--text-primary)]">
-                          F1 {m.test.F1.toFixed(3)}
+                          F1 {fmtNum(m.test.F1, 3)}
                         </p>
                         <p className="text-[10px] text-[var(--text-secondary)]">
-                          P {(m.test.P * 100).toFixed(0)}% · R{" "}
-                          {(m.test.R * 100).toFixed(0)}%
+                          P {fmtPct(m.test.P, 0)} · R{" "}
+                          {fmtPct(m.test.R, 0)}
                         </p>
                       </div>
                       <div>
@@ -216,12 +217,12 @@ export function GuideView({
                         </p>
                         <p className="font-semibold text-[var(--accent-ink)]">
                           {m.cv_1024_last
-                            ? `${m.cv_1024_last.mAP50_95_mean.toFixed(3)}`
+                            ? `${fmtNum(m.cv_1024_last.mAP50_95_mean, 3)}`
                             : "—"}
                         </p>
                         <p className="text-[10px] text-[var(--text-secondary)]">
                           {m.cv_1024_last
-                            ? `±${m.cv_1024_last.mAP50_95_std.toFixed(3)}`
+                            ? `±${fmtNum(m.cv_1024_last.mAP50_95_std, 3)}`
                             : ""}
                         </p>
                       </div>

@@ -58,7 +58,7 @@ test.describe("Tracera v1.1 Tam Ekran Matrisi: Axe WCAG AA (Koyu + Açık), Mobi
 
       // Önce Mock motoru seçip tespit ve ısı haritası üretelim ki ekranlar dolu görünsün
       await page.getByTestId("backend-select").click();
-      await page.getByRole("option", { name: /Mock/i }).click();
+      await page.getByRole("option", { name: /Örnek veri|Sample data/i }).click();
       await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
       await page.getByTestId("explain-det-0").click();
       await expect(page.getByTestId("explain-overlay-img")).toBeVisible({
@@ -90,7 +90,7 @@ test.describe("Tracera v1.1 Tam Ekran Matrisi: Axe WCAG AA (Koyu + Açık), Mobi
       await page.goto("/");
 
       await page.getByTestId("backend-select").click();
-      await page.getByRole("option", { name: /Mock/i }).click();
+      await page.getByRole("option", { name: /Örnek veri|Sample data/i }).click();
       await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
       await page.getByTestId("explain-det-0").click();
       await expect(page.getByTestId("explain-overlay-img")).toBeVisible({

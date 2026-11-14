@@ -244,7 +244,7 @@ test.describe("Adım 5 — Canlı Video Modu (WebGPU & WASM) + Hata Analizi Gale
         await expect(page.getByTestId("template-spot-spur")).toContainText(
           "Hayır (<0.395)",
         );
-        await expect(page.getByTestId("quant-parity-table")).toContainText("0.395");
+        await expect(page.getByTestId("quant-parity-table")).toContainText("0,395");
         await expect(page.getByTestId("device-bench-btn")).toContainText(
           "Bu cihazda hız testi",
         );

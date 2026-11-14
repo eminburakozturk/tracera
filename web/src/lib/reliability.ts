@@ -1,5 +1,6 @@
 import type { LangCode } from "../store/useAppStore";
 import type { ReliabilityBin, ReliabilityData } from "../types";
+import { fmtNum } from "./format";
 
 export interface SplitReliabilityEntry {
   split: "val" | "test";
@@ -52,7 +53,7 @@ export function formatSplitReliability(
     return null;
   }
   const label = split === "val" ? "Val" : "Test";
-  const precisionPct = (bin.precision * 100).toFixed(1);
+  const precisionPct = fmtNum(bin.precision * 100, 1, lang);
   const lowSample = bin.n < 20;
   const shortText =
     lang === "en"

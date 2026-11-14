@@ -12,6 +12,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { MOCK_ENABLED } from "../lib/env";
 import type { BackendChoice } from "../inference/types";
 import { useAppStore, type AppTab } from "../store/useAppStore";
 import { Badge } from "./ui/badge";
@@ -165,7 +166,9 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
+                  {MOCK_ENABLED && (
+                    <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
+                  )}
                   {localApiAvailable && (
                     <SelectItem value="api">{t("backend.optApi")}</SelectItem>
                   )}

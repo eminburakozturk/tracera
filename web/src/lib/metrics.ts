@@ -1,5 +1,5 @@
 import { METRICS_FALLBACK } from "../fixtures";
-import type { MetricsPayload } from "../types";
+import type { EdgeBenchmarkRow, MetricsPayload } from "../types";
 
 export async function loadMetrics(apiBaseUrl?: string | null): Promise<{
   data: MetricsPayload;
@@ -32,4 +32,17 @@ export async function loadMetrics(apiBaseUrl?: string | null): Promise<{
   }
 
   return { data: METRICS_FALLBACK, source: "fallback" };
+}
+
+/**
+ * Ana Sayfa hız kartının kaynağı: YALNIZ 1024 modelin OpenVINO INT8 (CPU) satırı.
+ * (Önceki sürüm ilk "int8" satırını alıyordu → 640 modelin 17.4 ms'i gösteriliyordu.)
+ */
+export function selectOpenVinoInt8Row(
+  rows: EdgeBenchmarkRow[] | undefined,
+  imgsz = 1024,
+): EdgeBenchmarkRow | undefined {
+  return rows?.find(
+    (r) => r.imgsz === imgsz && r.format === "OpenVINO INT8 (CPU)",
+  );
 }

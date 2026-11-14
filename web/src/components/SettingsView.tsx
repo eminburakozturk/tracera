@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { MOCK_ENABLED } from "../lib/env";
 import type { BackendChoice } from "../inference/types";
 import { clearAllHistoryRecords } from "../lib/historyDb";
 import { getAppVersion, getModelVersion } from "../lib/meta";
@@ -32,6 +33,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Slider } from "./ui/slider";
+import { fmtNum } from "../lib/format";
 
 interface SettingsViewProps {
   onReopenOnboarding?: () => void;
@@ -161,7 +163,9 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
+                  {MOCK_ENABLED && (
+                    <SelectItem value="mock">{t("backend.optMock")}</SelectItem>
+                  )}
                   {localApiAvailable && (
                     <SelectItem value="api">{t("backend.optApi")}</SelectItem>
                   )}
@@ -186,7 +190,7 @@ export function SettingsView({ onReopenOnboarding }: SettingsViewProps) {
                 <span className="font-medium text-[var(--text-secondary)]">
                   {t("detect.confLabel")}:{" "}
                   <strong className="font-mono text-[var(--accent-ink)]">
-                    {confThreshold.toFixed(3)}
+                    {fmtNum(confThreshold, 3)}
                   </strong>
                 </span>
                 <Button

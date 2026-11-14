@@ -16,6 +16,7 @@ import {
   type DeviceBenchmarkReport,
   runDeviceBenchmark,
 } from "../lib/deviceBenchmark";
+import { getClassDisplayName } from "../lib/v11Rules";
 import { useAppStore } from "../store/useAppStore";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -26,15 +27,44 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { fmtMs, fmtNum as sharedFmtNum, fmtPct as sharedFmtPct } from "../lib/format";
 
 function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  return `${(v * 100).toFixed(1)}%`;
+  return sharedFmtPct(v, 1);
 }
 
 function fmtNum(v: number | null | undefined, digits = 3): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  return v.toFixed(digits);
+  return sharedFmtNum(v, digits);
+}
+
+const OP_COLUMNS = [
+  { tr: "Küme", en: "Split", trTitle: "Veri kümesi", enTitle: "Data split" },
+  { tr: "DP", en: "TP", trTitle: "Doğru pozitif", enTitle: "True positives" },
+  { tr: "YP", en: "FP", trTitle: "Yanlış pozitif (toplam)", enTitle: "False positives (total)" },
+  { tr: "Arka plan YP", en: "Bg FP", trTitle: "Hiçbir kusurla örtüşmüyor (IoU < 0,1)", enTitle: "No overlap with any defect (IoU < 0.1)" },
+  { tr: "Konum hatası", en: "Loc FP", trTitle: "Kutu kaymış (0,1 ≤ IoU ≤ 0,5)", enTitle: "Box misplaced (0.1 ≤ IoU ≤ 0.5)" },
+  { tr: "Tekrar", en: "Dup FP", trTitle: "Aynı kusura ikinci kutu (IoU > 0,5)", enTitle: "Second box on same defect (IoU > 0.5)" },
+  { tr: "Sınıf karışması", en: "Cross FP", trTitle: "Doğru yer, yanlış sınıf (IoU > 0,5)", enTitle: "Right place, wrong class (IoU > 0.5)" },
+  { tr: "YN", en: "FN", trTitle: "Kaçırılan kusur", enTitle: "Missed defects" },
+  { tr: "P", en: "P", trTitle: "Kesinlik", enTitle: "Precision" },
+  { tr: "R", en: "R", trTitle: "Duyarlılık", enTitle: "Recall" },
+  { tr: "F1", en: "F1", trTitle: "F1 skoru", enTitle: "F1 score" },
+] as const;
+
+function splitLabel(split: string, lang: string): string {
+  const en = lang === "en";
+  switch (split) {
+    case "val":
+      return en ? "Validation" : "Doğrulama";
+    case "test":
+      return en ? "Test" : "Test";
+    case "test_sablon_noktalari_haric":
+      return en ? "Test (2 template points excluded)" : "Test (2 şablon noktası hariç)";
+    default:
+      return split;
+  }
 }
 
 export function ResultsView() {
@@ -303,17 +333,15 @@ export function ResultsView() {
             <table className="w-full border-collapse text-left font-mono text-xs tabular-nums">
               <thead>
                 <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
-                  <th className="py-2 pr-3">Split</th>
-                  <th className="py-2 pr-3">TP</th>
-                  <th className="py-2 pr-3">FP</th>
-                  <th className="py-2 pr-3">Bg FP</th>
-                  <th className="py-2 pr-3">Konum FP</th>
-                  <th className="py-2 pr-3">Dup FP</th>
-                  <th className="py-2 pr-3">Cross FP</th>
-                  <th className="py-2 pr-3">FN</th>
-                  <th className="py-2 pr-3">P</th>
-                  <th className="py-2 pr-3">R</th>
-                  <th className="py-2">F1</th>
+                  {OP_COLUMNS.map((c, i) => (
+                    <th
+                      key={c.en}
+                      title={lang === "en" ? c.enTitle : c.trTitle}
+                      className={i === OP_COLUMNS.length - 1 ? "py-2" : "py-2 pr-3"}
+                    >
+                      {lang === "en" ? c.en : c.tr}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -325,7 +353,7 @@ export function ResultsView() {
                       className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
                     >
                       <td className="py-2 pr-3 font-semibold">
-                        {row.split}
+                        {splitLabel(row.split, lang)}
                         {isSens && (
                           <Badge variant="warning" className="ml-2">
                             post-hoc
@@ -589,11 +617,11 @@ export function ResultsView() {
                 >
                   <thead>
                     <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
-                      <th className="py-2 pr-3">Kart</th>
-                      <th className="py-2 pr-3">Split</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "Board" : "Kart"}</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "Split" : "Küme"}</th>
                       {analysis.classes.map((cls) => (
-                        <th key={cls} className="py-2 pr-3">
-                          {cls}
+                        <th key={cls} className="py-2 pr-3" title={cls}>
+                          {getClassDisplayName(cls, lang, true)}
                         </th>
                       ))}
                       <th className="py-2 font-semibold">Toplam</th>
@@ -611,7 +639,7 @@ export function ResultsView() {
                             {row.kart_no}
                           </td>
                           <td className="py-2 pr-3 text-[var(--text-secondary)]">
-                            {row.split}
+                            {splitLabel(row.split, lang)}
                           </td>
                           {analysis.classes.map((cls) => (
                             <td key={cls} className="py-2 pr-3">
@@ -648,7 +676,7 @@ export function ResultsView() {
                             {row.kart_no}
                           </td>
                           <td className="py-2 pr-3 text-[var(--text-secondary)]">
-                            {row.split}
+                            {splitLabel(row.split, lang)}
                           </td>
                           {analysis.classes.map((cls) => (
                             <td key={cls} className="py-2 pr-3">
@@ -752,12 +780,12 @@ export function ResultsView() {
                 >
                   <thead>
                     <tr className="border-b border-[var(--border-hairline)] text-[var(--text-muted)]">
-                      <th className="py-2 pr-3">conf_esik</th>
-                      <th className="py-2 pr-3">eslesen</th>
-                      <th className="py-2 pr-3">yalniz_fp32</th>
-                      <th className="py-2 pr-3">yalniz_int8</th>
-                      <th className="py-2 pr-3">ort_iou</th>
-                      <th className="py-2">ort_dconf</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "Threshold" : "Eşik"}</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "Matched" : "Eşleşen"}</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "FP32 only" : "Yalnız FP32"}</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "INT8 only" : "Yalnız INT8"}</th>
+                      <th className="py-2 pr-3">{lang === "en" ? "Mean IoU" : "Ort. IoU"}</th>
+                      <th className="py-2">{lang === "en" ? "Mean |Δconf|" : "Ort. |Δgüven|"}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -767,7 +795,7 @@ export function ResultsView() {
                         className="border-b border-[var(--border-hairline)]/60 text-[var(--text-primary)]"
                       >
                         <td className="py-2 pr-3 font-semibold">
-                          {q.conf_esik}
+                          {fmtNum(Number(q.conf_esik), 3)}
                         </td>
                         <td className="py-2 pr-3">{q.eslesen}</td>
                         <td className="py-2 pr-3">{q.yalniz_fp32}</td>
@@ -863,7 +891,7 @@ export function ResultsView() {
                         {t("results.deviceBenchMedianModel")}
                       </th>
                       <td className="py-2 font-semibold text-[var(--text-primary)]">
-                        {benchReport.median_model_ms.toFixed(2)} ms
+                        {fmtMs(benchReport.median_model_ms, 2)}
                       </td>
                     </tr>
                     <tr className="border-b border-[var(--border-hairline)]/60">
@@ -871,7 +899,7 @@ export function ResultsView() {
                         {t("results.deviceBenchMedianTotal")}
                       </th>
                       <td className="py-2 font-semibold text-[var(--text-primary)]">
-                        {benchReport.median_total_ms.toFixed(2)} ms
+                        {fmtMs(benchReport.median_total_ms, 2)}
                       </td>
                     </tr>
                     <tr className="border-b border-[var(--border-hairline)]/60">

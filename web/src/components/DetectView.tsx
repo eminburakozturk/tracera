@@ -47,6 +47,7 @@ import {
 } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 import { Slider } from "./ui/slider";
+import { fmtNum, fmtPct, fmtMs } from "../lib/format";
 
 interface DetectViewProps {
   onSelectExample: (example: ValExampleItem) => Promise<void>;
@@ -247,7 +248,7 @@ export function DetectView({
     const imgWidth = detectResult?.width ?? 3056;
     const strokeW = Math.max(3, Math.round(imgWidth / 420));
     const fontSize = Math.max(18, Math.round(imgWidth / 75));
-    const labelText = `${det.cls} ${(det.conf * 100).toFixed(1)}%`;
+    const labelText = `${getClassDisplayName(det.cls, lang, true)} ${fmtPct(det.conf, 1)}`;
     const pillW = Math.max(120, labelText.length * fontSize * 0.58 + 16);
     const pillH = fontSize + 10;
     const labelY = y1 - pillH - 2 >= 0 ? y1 - pillH - 2 : y1 + 2;
@@ -257,7 +258,7 @@ export function DetectView({
         key={det.id}
         role="button"
         tabIndex={0}
-        aria-label={`${det.cls} ${(det.conf * 100).toFixed(1)}%`}
+        aria-label={`${getClassDisplayName(det.cls, lang)} ${fmtPct(det.conf, 1)}`}
         data-testid={`bbox-${det.id}`}
         style={{ pointerEvents: "all" }}
         className="cursor-pointer focus:outline-none"
@@ -349,7 +350,7 @@ export function DetectView({
             </div>
           </div>
           <div className="flex items-center gap-2 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
-            <span>Conf ≥ {confThreshold.toFixed(3)}</span>
+            <span>{lang === "en" ? "Conf" : "Güven"} ≥ {fmtNum(confThreshold, 3)}</span>
           </div>
         </div>
       )}
@@ -371,9 +372,9 @@ export function DetectView({
                       data-testid="timing-badge"
                     >
                       {t("detect.modelTime")}:{" "}
-                      {detectResult.timing.model_ms.toFixed(1)} ms ·{" "}
+                      {fmtMs(detectResult.timing.model_ms, 1)} ·{" "}
                       {t("detect.totalTime")}:{" "}
-                      {detectResult.timing.total_ms.toFixed(1)} ms
+                      {fmtMs(detectResult.timing.total_ms, 1)}
                     </Badge>
                     <Badge variant="secondary" className="font-mono">
                       {detectResult.backend}
@@ -677,7 +678,7 @@ export function DetectView({
                           <p className="text-xs font-semibold text-[var(--text-primary)]">
                             #{selectedDet.id} ·{" "}
                             {getClassDisplayName(selectedDet.cls, lang)} (
-                            {(selectedDet.conf * 100).toFixed(1)}%)
+                            {fmtPct(selectedDet.conf, 1)})
                           </p>
                           {isLowConfidenceReview(
                             selectedDet.conf,
@@ -788,7 +789,7 @@ export function DetectView({
                     className="font-mono text-lg font-semibold text-[var(--accent-ink)] tabular-nums"
                     data-testid="conf-value"
                   >
-                    {confThreshold.toFixed(3)}
+                    {fmtNum(confThreshold, 3)}
                   </span>
                   {Math.abs(confThreshold - meta.conf) > 0.001 && (
                     <Button
@@ -802,7 +803,7 @@ export function DetectView({
                         }
                       }}
                     >
-                      {t("detect.resetLocked")} ({meta.conf.toFixed(3)})
+                      {t("detect.resetLocked")} ({fmtNum(meta.conf, 3)})
                     </Button>
                   )}
                 </div>
@@ -953,7 +954,7 @@ export function DetectView({
                                 </span>
                               </div>
                               <span className="font-mono text-xs font-semibold text-[var(--accent-ink)] tabular-nums">
-                                {(det.conf * 100).toFixed(1)}%
+                                {fmtPct(det.conf, 1)}
                               </span>
                             </div>
                             <p className="mt-1 font-mono text-[11px] text-[var(--text-muted)] tabular-nums">

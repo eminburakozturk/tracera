@@ -37,6 +37,7 @@ import {
 } from "./inference/ort/OrtDetector";
 import type { Detector } from "./inference/types";
 import { loadAnalysis } from "./lib/analysis";
+import { MOCK_ENABLED } from "./lib/env";
 import { saveInspectionToHistory } from "./lib/historyDb";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
@@ -112,6 +113,13 @@ export function App() {
   React.useEffect(() => {
     void i18n.changeLanguage(lang);
   }, [lang, i18n]);
+
+  // Üretim derlemesinde Mock seçilemez; kalıcı ayarda kalmışsa tarayıcı motoruna dön.
+  React.useEffect(() => {
+    if (!MOCK_ENABLED && backendChoice === "mock") {
+      setBackendChoice("ort");
+    }
+  }, [backendChoice, setBackendChoice]);
 
   const recheckHealth = React.useCallback(async () => {
     try {

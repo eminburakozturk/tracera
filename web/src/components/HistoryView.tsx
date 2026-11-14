@@ -28,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { fmtNum, fmtPct, fmtMs } from "../lib/format";
 
 interface HistoryViewProps {
   onOpenRecord: (record: HistoryRecord) => void;
@@ -35,8 +36,8 @@ interface HistoryViewProps {
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes < 1024 * 1024) return `${fmtNum(bytes / 1024, 1)} KB`;
+  return `${fmtNum(bytes / (1024 * 1024), 2)} MB`;
 }
 
 export function HistoryView({ onOpenRecord }: HistoryViewProps) {
@@ -180,9 +181,9 @@ export function HistoryView({ onOpenRecord }: HistoryViewProps) {
                       className="mt-2 h-36 w-full rounded-lg border border-[var(--border-hairline)] object-cover"
                     />
                     <div className="mt-2 flex flex-wrap items-center justify-between font-mono text-[11px] text-[var(--text-secondary)] tabular-nums">
-                      <span>Conf: {rec.confThreshold.toFixed(3)}</span>
+                      <span>{lang === "en" ? "Conf" : "Eşik"}: {fmtNum(rec.confThreshold, 3)}</span>
                       <span>Kusur: {rec.defectCount}</span>
-                      <span>{rec.result.timing.total_ms.toFixed(1)} ms</span>
+                      <span>{fmtMs(rec.result.timing.total_ms, 1)}</span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {rec.result.detections.map((d) => (
@@ -196,7 +197,7 @@ export function HistoryView({ onOpenRecord }: HistoryViewProps) {
                           />
                           <span>
                             {getClassDisplayName(d.cls, lang, true)}{" "}
-                            {(d.conf * 100).toFixed(0)}%
+                            {fmtPct(d.conf, 0)}
                           </span>
                         </span>
                       ))}
@@ -262,7 +263,7 @@ export function HistoryView({ onOpenRecord }: HistoryViewProps) {
                           {new Date(rec.createdAt).toLocaleString(
                             lang === "en" ? "en-US" : "tr-TR",
                           )}{" "}
-                          · Conf {rec.confThreshold.toFixed(3)} ·{" "}
+                          · {lang === "en" ? "Conf" : "Eşik"} {fmtNum(rec.confThreshold, 3)} ·{" "}
                           {rec.defectCount} kusur
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-1">

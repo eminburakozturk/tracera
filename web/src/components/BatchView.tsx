@@ -37,6 +37,7 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { fmtNum } from "../lib/format";
 
 export interface BatchQueueItem {
   id: string;
@@ -678,7 +679,7 @@ export function BatchView({ onDetectFile, onOpenInInspect }: BatchViewProps) {
                         </td>
                         <td className="py-2.5 pr-3">
                           {it.result
-                            ? it.result.timing.total_ms.toFixed(1)
+                            ? fmtNum(it.result.timing.total_ms, 1)
                             : "—"}
                         </td>
                         <td className="py-2.5">

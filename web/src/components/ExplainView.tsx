@@ -28,6 +28,7 @@ import {
 } from "./ui/select";
 import { Skeleton } from "./ui/skeleton";
 import { Slider } from "./ui/slider";
+import { fmtNum, fmtPct, fmtMs } from "../lib/format";
 
 interface ExplainViewProps {
   onRunExplain: () => Promise<void>;
@@ -162,7 +163,7 @@ export function ExplainView({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" data-testid="explain-detection-badge">
                   #{selectedDet.id} · {selectedDet.cls} (
-                  {(selectedDet.conf * 100).toFixed(1)}%)
+                  {fmtPct(selectedDet.conf, 1)})
                 </Badge>
                 {explainSource && (
                   <Badge variant="secondary" data-testid="explain-source-badge">
@@ -171,7 +172,7 @@ export function ExplainView({
                 )}
                 <Badge variant="default" className="font-mono tabular-nums">
                   Layer {explainResult.layer} ·{" "}
-                  {explainResult.timing.total_ms.toFixed(1)} ms
+                  {fmtMs(explainResult.timing.total_ms, 1)}
                 </Badge>
               </div>
             )}
@@ -217,7 +218,7 @@ export function ExplainView({
                     {detections.map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>
                         #{d.id} · {getClassDisplayName(d.cls, lang, true)} (
-                        {(d.conf * 100).toFixed(1)}%)
+                        {fmtPct(d.conf, 1)})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -406,24 +407,24 @@ export function ExplainView({
                 {lang === "en" ? (
                   <span>
                     Confidence score{" "}
-                    <strong>{(selectedDet.conf * 100).toFixed(1)}%</strong>{" "}
+                    <strong>{fmtPct(selectedDet.conf, 1)}</strong>{" "}
                     (threshold{" "}
-                    <strong>{(confThreshold * 100).toFixed(1)}%</strong>, diff{" "}
+                    <strong>{fmtPct(confThreshold, 1)}</strong>, diff{" "}
                     <strong>
                       {selectedDet.conf - confThreshold >= 0 ? "+" : ""}
-                      {((selectedDet.conf - confThreshold) * 100).toFixed(1)} pt
+                      {fmtNum((selectedDet.conf - confThreshold) * 100, 1)} pt
                     </strong>
                     ).
                   </span>
                 ) : (
                   <span>
                     Güven skoru{" "}
-                    <strong>%{(selectedDet.conf * 100).toFixed(1)}</strong>{" "}
+                    <strong>{fmtPct(selectedDet.conf, 1)}</strong>{" "}
                     (aktif eşik{" "}
-                    <strong>%{(confThreshold * 100).toFixed(1)}</strong>, fark{" "}
+                    <strong>{fmtPct(confThreshold, 1)}</strong>, fark{" "}
                     <strong>
                       {selectedDet.conf - confThreshold >= 0 ? "+" : ""}
-                      {((selectedDet.conf - confThreshold) * 100).toFixed(1)}{" "}
+                      {fmtNum((selectedDet.conf - confThreshold) * 100, 1)}{" "}
                       puan
                     </strong>
                     ).
@@ -479,11 +480,11 @@ export function ExplainView({
                 <div className="flex items-center justify-between text-xs font-medium">
                   <span>
                     {t("explain.energyInBoxLabel", {
-                      pct: (energyInBox * 100).toFixed(1),
+                      pct: fmtNum(energyInBox * 100, 1),
                     })}
                   </span>
                   <span className="font-mono text-[var(--accent-ink)] tabular-nums">
-                    {(energyInBox * 100).toFixed(1)}%
+                    {fmtPct(energyInBox, 1)}
                   </span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg-subtle)]">
@@ -531,35 +532,19 @@ export function ExplainView({
                 {t("explain.whatItShowsMetrics", {
                   n: layercamRow.n_tespit,
                   imgsz: layercamRow.imgsz,
-                  drop1x: (layercamRow.goreli_dusus_harita_ort_1x ?? 0).toFixed(
-                    3,
-                  ),
-                  ctrl1x: (
-                    layercamRow.goreli_dusus_kontrol_ort_1x ?? 0
-                  ).toFixed(3),
-                  win1x: (
-                    (layercamRow.goreli_kazanma_orani_1x ?? 0) * 100
-                  ).toFixed(1),
-                  drop2x: (layercamRow.goreli_dusus_harita_ort_2x ?? 0).toFixed(
-                    3,
-                  ),
-                  ctrl2x: (
-                    layercamRow.goreli_dusus_kontrol_ort_2x ?? 0
-                  ).toFixed(3),
-                  win2x: (
-                    (layercamRow.goreli_kazanma_orani_2x ?? 0) * 100
-                  ).toFixed(1),
-                  energy: (layercamRow.enerji_kutuda_pencere * 100).toFixed(1),
+                  drop1x: fmtNum(layercamRow.goreli_dusus_harita_ort_1x ?? 0, 3),
+                  ctrl1x: fmtNum(layercamRow.goreli_dusus_kontrol_ort_1x ?? 0, 3),
+                  win1x: fmtNum((layercamRow.goreli_kazanma_orani_1x ?? 0) * 100, 1),
+                  drop2x: fmtNum(layercamRow.goreli_dusus_harita_ort_2x ?? 0, 3),
+                  ctrl2x: fmtNum(layercamRow.goreli_dusus_kontrol_ort_2x ?? 0, 3),
+                  win2x: fmtNum((layercamRow.goreli_kazanma_orani_2x ?? 0) * 100, 1),
+                  energy: fmtNum(layercamRow.enerji_kutuda_pencere * 100, 1),
                 })}
               </p>
               <p className="text-xs text-[var(--text-muted)]">
                 {t("explain.whatItShowsCaveat", {
-                  pointing: (layercamRow.kendi_kutu_tum_goruntu * 100).toFixed(
-                    1,
-                  ),
-                  randPointing: (
-                    layercamRow.pointing_rastgele_model * 100
-                  ).toFixed(1),
+                  pointing: fmtNum(layercamRow.kendi_kutu_tum_goruntu * 100, 1),
+                  randPointing: fmtNum(layercamRow.pointing_rastgele_model * 100, 1),
                 })}
               </p>
             </>

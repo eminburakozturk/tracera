@@ -170,8 +170,8 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
     );
     expect(lowSampleSummary).not.toBeNull();
     expect(lowSampleSummary!.valPart?.lowSample).toBe(true);
-    expect(lowSampleSummary!.headlineText).toContain("Val: %100.0 (n=4)");
-    expect(lowSampleSummary!.headlineText).toContain("Test: %12.8 (n=78)");
+    expect(lowSampleSummary!.headlineText).toContain("Val: %100,0 (n=4)");
+    expect(lowSampleSummary!.headlineText).toContain("Test: %12,8 (n=78)");
 
     // c) Yalnız tek dosya (ör. yalnız reliability_val.json) varsa hangi bölmeden olduğu açıkça yazılır
     const singleValSummary = buildReliabilitySummary(
@@ -235,7 +235,7 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
     expect(screen.queryByTestId("reliability-sentence")).not.toBeInTheDocument();
     // energy_in_box=0.466 -> yatay çubuk görünür
     expect(screen.getByTestId("energy-in-box-row")).toHaveTextContent(
-      "Isı haritası enerjisinin %46.6'i kutunun içinde",
+      "Isı haritası enerjisinin kutu içindeki payı: %46,6",
     );
 
     // conf=0.45 (bin 0.395-0.5, Val n=4 < 20) -> reliability cümlesi ve 'az örnek' rozeti görünür
@@ -467,9 +467,9 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
       />,
     );
     expect(screen.getByTestId("home-metric-cv")).toHaveTextContent(
-      "0.858 ± 0.152",
+      "0,858 ± 0,152",
     );
-    expect(screen.getByTestId("home-metric-test")).toHaveTextContent("0.8101");
+    expect(screen.getByTestId("home-metric-test")).toHaveTextContent("0,810");
 
     render(<GuideView initialGuideIndex={null} initialClassMetrics={null} />);
     expect(screen.getByTestId("guide-dataset-note")).toHaveTextContent(

@@ -107,7 +107,7 @@ export function AboutView({ initialTimeline }: AboutViewProps) {
                 className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium break-all text-[var(--text-primary)] hover:border-[var(--accent)]"
               >
                 <span>
-                  https://www.linkedin.com/in/emin-burak-%C3%B6zt%C3%BCrk-85a674395/
+                  linkedin.com/in/emin-burak-öztürk
                 </span>
                 <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--accent-ink)]" />
               </a>
