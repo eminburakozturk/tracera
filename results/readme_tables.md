@@ -98,7 +98,7 @@
 | 0.9–1.0 | 0 | — | 0 | — | — | — |
 | **Toplam (≥ 0.395)** | **530** | **0.9698 (%97.0)** | **558** | **416** | **142** | **0.7455 (%74.6)** |
 
-Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için genel bir kalibrasyon iddiası yapılmaz (arayüzde `0.395–0.6` aralığına eklenen *"Düşük güven: gözden geçirin"* etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).
+Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için genel bir kalibrasyon iddiası yapılmaz (arayüzde güveni `0.6`'nın altındaki tespitlere eklenen *"Düşük güven: gözden geçirin"* etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).
 
 ### Tablo 6a: XAI Pointing Game, Rastgelelik ve Enerji Oranı (yolo11s @ 1024, n=150 Doğru Tespit)
 
