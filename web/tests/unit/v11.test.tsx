@@ -8,6 +8,7 @@ import {
   type BatchQueueItem,
   runBatchQueueSequentially,
 } from "../../src/components/BatchView";
+import { DetectView } from "../../src/components/DetectView";
 import { ExplainView } from "../../src/components/ExplainView";
 import { GuideView } from "../../src/components/GuideView";
 import { HistoryView } from "../../src/components/HistoryView";
@@ -26,6 +27,12 @@ import { FALLBACK_META } from "../../src/lib/meta";
 import { generateInspectionPdfBytes } from "../../src/lib/pdfReport";
 import { buildReliabilitySummary } from "../../src/lib/reliability";
 import { getApprovedTimelineItems } from "../../src/lib/timeline";
+import {
+  isLowConfidenceReview,
+  LOW_CONF_REVIEW_LABEL_TR,
+  LOW_CONF_REVIEW_TOOLTIP_TR,
+  LOW_CONF_REVIEW_UPPER_BOUND,
+} from "../../src/lib/v11Rules";
 import { useAppStore } from "../../src/store/useAppStore";
 import type {
   DetectResult,
@@ -462,5 +469,108 @@ describe("Tracera v1.1 UI Rules, Reliability, Timeline, Batch, History & PDF", (
     fireEvent.click(screen.getByTestId("onboarding-skip-btn"));
     expect(localStorage.getItem(ONBOARDING_STORAGE_KEY)).toBe("1");
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("8) Düşük güven: gözden geçirin etiketi (0.394 → etiket yok ve tespit gösterilmez; 0.45 → etiket var ve KALDI; 0.6 → etiket yok)", () => {
+    expect(LOW_CONF_REVIEW_UPPER_BOUND).toBe(0.6);
+    expect(isLowConfidenceReview(0.394, 0.395)).toBe(false);
+    expect(isLowConfidenceReview(0.395, 0.395)).toBe(true);
+    expect(isLowConfidenceReview(0.45, 0.395)).toBe(true);
+    expect(isLowConfidenceReview(0.599, 0.395)).toBe(true);
+    expect(isLowConfidenceReview(0.6, 0.395)).toBe(false);
+
+    const dummyFile = new File(["pcb"], "06_spur.jpg", { type: "image/jpeg" });
+    useAppStore.setState({
+      confThreshold: 0.395,
+      selectedImage: {
+        file: dummyFile,
+        url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        name: "06_spur.jpg",
+      },
+      detectResult: {
+        width: 1024,
+        height: 1024,
+        detections: [
+          {
+            id: 1,
+            cls: "spur",
+            cls_id: 4,
+            conf: 0.394,
+            box: [10, 10, 40, 40],
+          },
+          {
+            id: 2,
+            cls: "spur",
+            cls_id: 4,
+            conf: 0.45,
+            box: [50, 50, 90, 90],
+          },
+          {
+            id: 3,
+            cls: "short",
+            cls_id: 3,
+            conf: 0.6,
+            box: [120, 120, 180, 180],
+          },
+        ],
+        timing: { pre_ms: 1, model_ms: 15, post_ms: 1, total_ms: 17 },
+        backend: "ort-webgpu",
+      },
+      selectedDetectionId: 2,
+    });
+
+    const { rerender } = render(
+      <DetectView
+        onSelectExample={async () => {}}
+        onSelectFile={async () => {}}
+        onRunDetect={async () => {}}
+        onInspectDetection={() => {}}
+      />,
+    );
+
+    // 0.394 -> tespit gösterilmez ve etiket yok
+    expect(screen.queryByTestId("det-card-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("low-conf-badge-1")).not.toBeInTheDocument();
+
+    // 0.45 -> tespit gösterilir, kusur kartında ve listede "Düşük güven: gözden geçirin" etiketi ve ipucu var
+    expect(screen.getByTestId("det-card-2")).toBeInTheDocument();
+    const listBadge = screen.getByTestId("low-conf-badge-2");
+    expect(listBadge).toHaveTextContent(LOW_CONF_REVIEW_LABEL_TR);
+    expect(listBadge).toHaveAttribute("title", LOW_CONF_REVIEW_TOOLTIP_TR);
+    const selectedBadge = screen.getByTestId("selected-low-conf-badge");
+    expect(selectedBadge).toHaveTextContent(LOW_CONF_REVIEW_LABEL_TR);
+    expect(selectedBadge).toHaveAttribute("title", LOW_CONF_REVIEW_TOOLTIP_TR);
+
+    // 0.6 -> tespit gösterilir ama düşük güven etiketi YOK
+    expect(screen.getByTestId("det-card-3")).toBeInTheDocument();
+    expect(screen.queryByTestId("low-conf-badge-3")).not.toBeInTheDocument();
+
+    // Yalnız 0.45 tespiti varken de GEÇTİ/KALDI kuralı değişmez -> KALDI
+    useAppStore.setState({
+      detectResult: {
+        width: 1024,
+        height: 1024,
+        detections: [
+          {
+            id: 2,
+            cls: "spur",
+            cls_id: 4,
+            conf: 0.45,
+            box: [50, 50, 90, 90],
+          },
+        ],
+        timing: { pre_ms: 1, model_ms: 15, post_ms: 1, total_ms: 17 },
+        backend: "ort-webgpu",
+      },
+    });
+    rerender(
+      <DetectView
+        onSelectExample={async () => {}}
+        onSelectFile={async () => {}}
+        onRunDetect={async () => {}}
+        onInspectDetection={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("verdict-badge")).toHaveTextContent("KALDI");
   });
 });

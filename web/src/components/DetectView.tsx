@@ -28,6 +28,11 @@ import { cn } from "../lib/utils";
 import {
   getClassColor,
   getClassDisplayName,
+  isLowConfidenceReview,
+  LOW_CONF_REVIEW_LABEL_EN,
+  LOW_CONF_REVIEW_LABEL_TR,
+  LOW_CONF_REVIEW_TOOLTIP_EN,
+  LOW_CONF_REVIEW_TOOLTIP_TR,
   VERDICT_RULE_NOTE_EN,
   VERDICT_RULE_NOTE_TR,
 } from "../lib/v11Rules";
@@ -189,8 +194,11 @@ export function DetectView({
   }, [selectedImage?.url]);
 
   const allDetections = React.useMemo(
-    () => detectResult?.detections ?? [],
-    [detectResult],
+    () =>
+      (detectResult?.detections ?? []).filter(
+        (d) => d.conf >= confThreshold,
+      ),
+    [detectResult, confThreshold],
   );
   const filteredDetections = React.useMemo(() => {
     if (classFilter === "all") return allDetections;
@@ -668,11 +676,34 @@ export function DetectView({
                         }
                       />
                       <div>
-                        <p className="text-xs font-semibold text-[var(--text-primary)]">
-                          #{selectedDet.id} ·{" "}
-                          {getClassDisplayName(selectedDet.cls, lang)} (
-                          {(selectedDet.conf * 100).toFixed(1)}%)
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs font-semibold text-[var(--text-primary)]">
+                            #{selectedDet.id} ·{" "}
+                            {getClassDisplayName(selectedDet.cls, lang)} (
+                            {(selectedDet.conf * 100).toFixed(1)}%)
+                          </p>
+                          {isLowConfidenceReview(
+                            selectedDet.conf,
+                            confThreshold,
+                          ) && (
+                            <Badge
+                              variant="warning"
+                              data-testid="selected-low-conf-badge"
+                              title={
+                                lang === "en"
+                                  ? LOW_CONF_REVIEW_TOOLTIP_EN
+                                  : LOW_CONF_REVIEW_TOOLTIP_TR
+                              }
+                            >
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              <span>
+                                {lang === "en"
+                                  ? LOW_CONF_REVIEW_LABEL_EN
+                                  : LOW_CONF_REVIEW_LABEL_TR}
+                              </span>
+                            </Badge>
+                          )}
+                        </div>
                         <p className="font-mono text-[11px] text-[var(--text-secondary)] tabular-nums">
                           [{selectedDet.box.map((v) => Math.round(v)).join(", ")}]
                         </p>
@@ -940,6 +971,26 @@ export function DetectView({
                             <p className="mt-1 font-mono text-[11px] text-[var(--text-muted)] tabular-nums">
                               [{det.box.map((v) => Math.round(v)).join(", ")}]
                             </p>
+                            {isLowConfidenceReview(det.conf, confThreshold) && (
+                              <div className="mt-1.5">
+                                <Badge
+                                  variant="warning"
+                                  data-testid={`low-conf-badge-${det.id}`}
+                                  title={
+                                    lang === "en"
+                                      ? LOW_CONF_REVIEW_TOOLTIP_EN
+                                      : LOW_CONF_REVIEW_TOOLTIP_TR
+                                  }
+                                >
+                                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                                  <span>
+                                    {lang === "en"
+                                      ? LOW_CONF_REVIEW_LABEL_EN
+                                      : LOW_CONF_REVIEW_LABEL_TR}
+                                  </span>
+                                </Badge>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="mt-2 flex justify-end">
