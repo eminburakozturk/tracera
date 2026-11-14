@@ -1,14 +1,14 @@
 {
-  "status": "draft",
-  "requires_claude_approval": true,
+  "status": "approved",
+  "requires_claude_approval": false,
   "source": "KARARLAR.md",
-  "note": "Bu dosya yalnızca taslaktır; Claude onaylamadan v1.1 arayüzünde (timeline.json) kullanılmaz.",
+  "note": "Claude tarafından 2026-11-14'te KARARLAR.md, README.md ve results/ ile karşılaştırılıp onaylandı (4 özet düzeltildi).",
   "items": [
     {
       "id": 1,
       "date": "2026-11-11",
       "title": "PKU-Market-PCB veri seti ve kart bazlı bölme kuralı",
-      "summary": "693 görüntü incelenip rotation kopyaları elendikten sonra veri sızıntısını önlemek için 6 eğitim, 2 doğrulama ve 2 test kartından oluşan kart bazlı bölme kilitlendi."
+      "summary": "693 görüntü incelendi; döndürülmüş kopyalar (rotation/) sızıntı riski nedeniyle dışarıda bırakıldı ve kart bazlı bölme (6 eğitim, 2 doğrulama, 2 test kartı) kilitlendi."
     },
     {
       "id": 2,
@@ -38,7 +38,7 @@
       "id": 6,
       "date": "2026-11-12",
       "title": "Edge hızlandırma: OpenVINO INT8 ve TensorRT FP16",
-      "summary": "1024 modelde OpenVINO INT8 CPU'da 27.3 FPS, TensorRT FP16 GPU'da 299 FPS model hızına ulaşıldı ve mAP kaybı görülmedi."
+      "summary": "1024 modelde OpenVINO INT8 laptop CPU'da 36.7 ms (~27 FPS), TensorRT FP16 RTX 4060'ta 3.34 ms model süresine ulaştı; mAP kaybı ölçülmedi."
     },
     {
       "id": 7,
@@ -50,7 +50,7 @@
       "id": 8,
       "date": "2026-11-13",
       "title": "Tarayıcı içi FP32 ONNX (WebGPU) parite testi",
-      "summary": "Cihaz içinde çalışan WebGPU FP32 ONNX çıkarımı PyTorch referansıyla %96.72 eşleşme (ort. IoU 0.9885) ve medyan 36.05 ms model süresi sağladı."
+      "summary": "Tarayıcıda çalışan WebGPU FP32 ONNX çıkarımı PyTorch referansıyla %96.72 eşleşme (ort. IoU 0.9885) verdi; laptopta medyan model süresi 36.05 ms."
     },
     {
       "id": 9,
@@ -68,7 +68,7 @@
       "id": 11,
       "date": "2026-11-14",
       "title": "v1.0.0 açık kaynak sürümü ve GitHub CI yayını",
-      "summary": "GitHub deposu, v1.0.0 EXE/APK sürüm paketi, Hugging Face Space/Model depoları ve Linux parite CI iş akışı yayına alındı."
+      "summary": "GitHub deposu, v1.0.0 EXE/APK sürüm paketi, Hugging Face Space ve model depoları yayına alındı; GitHub Actions CI kuruldu."
     }
   ]
 }
