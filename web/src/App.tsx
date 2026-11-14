@@ -32,6 +32,7 @@ import { loadAnalysis } from "./lib/analysis";
 import { saveInspectionToHistory } from "./lib/historyDb";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
+import { generateInspectionPdfBytes, triggerPdfDownload } from "./lib/pdfReport";
 import { connectTauriSidecar, isTauriApp } from "./platform/tauri";
 import { useAppStore } from "./store/useAppStore";
 import type { HistoryRecord } from "./types";
@@ -361,6 +362,21 @@ export function App() {
     [handleRunExplain, setActiveTab, setSelectedDetectionId],
   );
 
+  const handleExportPdf = React.useCallback(async () => {
+    const state = useAppStore.getState();
+    if (!state.selectedImage || !state.detectResult) return;
+    const pdfBytes = await generateInspectionPdfBytes({
+      filename: state.selectedImage.name,
+      meta: state.meta,
+      confThreshold: state.confThreshold,
+      result: state.detectResult,
+      explainResult: state.explainResult,
+      lang: state.lang,
+    });
+    const baseName = state.selectedImage.name.replace(/\.[^.]+$/, "");
+    triggerPdfDownload(pdfBytes, `${baseName}_tracera_rapor.pdf`);
+  }, []);
+
   const handleSelectExampleRef = React.useRef(handleSelectExample);
   handleSelectExampleRef.current = handleSelectExample;
 
@@ -568,6 +584,7 @@ export function App() {
                   onSelectFile={handleSelectFile}
                   onRunDetect={handleRunDetect}
                   onInspectDetection={handleInspectDetection}
+                  onExportPdf={handleExportPdf}
                 />
               )}
               {activeTab === "live" && <LiveView />}
