@@ -1,5 +1,19 @@
-import { Cloud, Cpu, Globe, Info, Moon, RefreshCw, Server, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
+import {
+  Cloud,
+  Cpu,
+  Globe,
+  Info,
+  Moon,
+  RefreshCw,
+  Server,
+  Sparkles,
+  Sun,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { BackendChoice } from "../inference/types";
+import { useAppStore, type AppTab } from "../store/useAppStore";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
@@ -9,20 +23,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip";
-import type { BackendChoice } from "../inference/types";
-import { useAppStore, type AppTab } from "../store/useAppStore";
 
 interface TopBarProps {
   onRecheckHealth: () => void;
   ortEnabled?: boolean;
 }
+
+const TAB_TITLE_KEY: Record<AppTab, string> = {
+  home: "nav.home",
+  detect: "nav.detect",
+  live: "nav.live",
+  explain: "nav.explain",
+  batch: "nav.batch",
+  history: "nav.history",
+  guide: "nav.guide",
+  results: "nav.results",
+  about: "nav.about",
+  developer: "nav.developer",
+  settings: "nav.settings",
+  more: "nav.more",
+};
 
 export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
   const { t } = useTranslation();
@@ -82,12 +108,12 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
       data-testid="top-bar"
       className="safe-area-top sticky top-0 z-40 border-b border-[var(--border-hairline)] bg-[var(--bg-surface)]/92 backdrop-blur-md"
     >
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent-ink)] sm:hidden">
             <svg
               viewBox="0 0 24 24"
-              className="h-5 w-5"
+              className="h-4 w-4"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.9"
@@ -102,48 +128,35 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
             </svg>
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-semibold tracking-tight text-[var(--text-primary)]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold tracking-tight text-[var(--text-primary)] sm:hidden">
                 {t("app.name")}
+              </span>
+              <span className="hidden text-xs font-medium text-[var(--text-muted)] sm:inline">
+                {t("app.name")} /
+              </span>
+              <span
+                data-testid="topbar-page-title"
+                className="text-sm font-semibold tracking-tight text-[var(--text-primary)]"
+              >
+                {t(TAB_TITLE_KEY[activeTab] ?? "nav.home")}
               </span>
               {renderBackendBadge()}
             </div>
-            <p className="hidden text-xs text-[var(--text-muted)] md:block">
-              {t("app.subtitle")}
-            </p>
           </div>
         </div>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(val) => setActiveTab(val as AppTab)}
-          className="hidden sm:block"
-        >
-          <TabsList aria-label="Ana gezinme">
-            <TabsTrigger value="detect" data-testid="tab-detect">
-              {t("nav.detect")}
-            </TabsTrigger>
-            <TabsTrigger value="live" data-testid="tab-live">
-              {t("nav.live")}
-            </TabsTrigger>
-            <TabsTrigger value="explain" data-testid="tab-explain">
-              {t("nav.explain")}
-            </TabsTrigger>
-            <TabsTrigger value="results" data-testid="tab-results">
-              {t("nav.results")}
-            </TabsTrigger>
-            <TabsTrigger value="about" data-testid="tab-about">
-              {t("nav.about")}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5">
-            <div className="w-[178px]">
+            <div className="w-[172px]">
               <Select
                 value={backendChoice}
-                onValueChange={(val) => setBackendChoice(val as BackendChoice)}
+                onValueChange={(val) => {
+                  setBackendChoice(val as BackendChoice);
+                  if (useAppStore.getState().activeTab === "home") {
+                    setActiveTab("detect");
+                  }
+                }}
               >
                 <SelectTrigger
                   aria-label={t("backend.label")}
@@ -172,7 +185,7 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
                     aria-label={t("backend.parityInfo")}
                     title={t("backend.parityInfo")}
                     data-testid="backend-parity-info"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] cursor-pointer"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] cursor-pointer"
                   >
                     <Info className="h-3.5 w-3.5" />
                   </button>
@@ -258,8 +271,12 @@ export function TopBar({ onRecheckHealth, ortEnabled = false }: TopBarProps) {
             variant="secondary"
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={theme === "dark" ? t("controls.themeLight") : t("controls.themeDark")}
-            title={theme === "dark" ? t("controls.themeLight") : t("controls.themeDark")}
+            aria-label={
+              theme === "dark" ? t("controls.themeLight") : t("controls.themeDark")
+            }
+            title={
+              theme === "dark" ? t("controls.themeLight") : t("controls.themeDark")
+            }
             data-testid="theme-toggle"
           >
             {theme === "dark" ? (

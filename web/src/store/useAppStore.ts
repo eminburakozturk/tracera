@@ -13,7 +13,19 @@ import type {
   ModelMeta,
 } from "../types";
 
-export type AppTab = "detect" | "live" | "explain" | "results" | "about";
+export type AppTab =
+  | "home"
+  | "detect"
+  | "live"
+  | "explain"
+  | "batch"
+  | "history"
+  | "guide"
+  | "results"
+  | "about"
+  | "developer"
+  | "settings"
+  | "more";
 export type ThemeMode = "dark" | "light";
 export type LangCode = "tr" | "en";
 export type ExplainStatus = "idle" | "loading" | "waking" | "success" | "error";
@@ -77,7 +89,12 @@ interface AppState {
   tauriSidecarStatus: "idle" | "starting" | "ready" | "error";
   tauriSidecarError: string | null;
 
+  sidebarCollapsed: boolean;
+  historyVersion: number;
+
   setActiveTab: (tab: AppTab) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  bumpHistoryVersion: () => void;
   setTheme: (theme: ThemeMode) => void;
   setLang: (lang: LangCode) => void;
   setBackendChoice: (backend: BackendChoice) => void;
@@ -119,7 +136,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  activeTab: "detect",
+  activeTab: "home",
   theme: getInitialTheme(),
   lang: "tr",
   backendChoice: "ort",
@@ -156,7 +173,13 @@ export const useAppStore = create<AppState>((set) => ({
   tauriSidecarStatus: "idle",
   tauriSidecarError: null,
 
+  sidebarCollapsed: false,
+  historyVersion: 0,
+
   setActiveTab: (activeTab) => set({ activeTab }),
+  setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+  bumpHistoryVersion: () =>
+    set((prev) => ({ historyVersion: prev.historyVersion + 1 })),
   setTheme: (theme) => set({ theme }),
   setLang: (lang) => set({ lang }),
   setBackendChoice: (backendChoice) => set({ backendChoice, detectError: null }),

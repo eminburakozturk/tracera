@@ -40,7 +40,137 @@ export interface ExplainResult {
   method: "layercam";
   layer: 4;
   timing: Timing;
+  // CONTRACT §7 v1.3 (opsiyonel — yeni API / bulut döndürür, eski istemciler yok sayabilir)
+  energy_in_box?: number; // 0..1 arası (örn. 0.4660)
+  peak_in_box?: boolean;
+  peak_xy?: [number, number];
 }
+
+export interface PrCurvePoint {
+  conf: number;
+  TP: number;
+  FP: number;
+  FN: number;
+  P: number;
+  R: number;
+  F1: number;
+  is_operating_point?: boolean;
+}
+
+export interface PrCurveData {
+  model: string;
+  split: string;
+  operating_conf: number;
+  operating_point: PrCurvePoint;
+  points: PrCurvePoint[];
+}
+
+export interface ReliabilityBin {
+  bin: string;
+  min: number;
+  max: number;
+  n: number;
+  TP: number;
+  FP: number;
+  precision: number | null;
+  mean_conf: number | null;
+}
+
+export interface ReliabilityData {
+  model: string;
+  split: string;
+  conf_threshold: number;
+  total_detections: number;
+  overall_precision: number;
+  bins: ReliabilityBin[];
+}
+
+export interface ClassSplitMetrics {
+  TP: number;
+  FP: number;
+  FN: number;
+  P: number;
+  R: number;
+  F1: number;
+}
+
+export interface ClassMetricItem {
+  class: string;
+  val: ClassSplitMetrics;
+  test: ClassSplitMetrics;
+  cv_1024_last?: {
+    folds: number;
+    mAP50_95_mean: number;
+    mAP50_95_std: number;
+  };
+  test_excluding_template?: ClassSplitMetrics;
+}
+
+export interface ClassMetricsData {
+  conf_threshold: number;
+  iou_threshold: number;
+  overall: {
+    val: ClassSplitMetrics;
+    test: ClassSplitMetrics;
+    cv_1024_last?: {
+      folds: number;
+      mAP50_mean: number;
+      mAP50_std: number;
+      mAP50_95_mean: number;
+      mAP50_95_std: number;
+    };
+  };
+  classes: ClassMetricItem[];
+}
+
+export interface TimelineItem {
+  id: number;
+  date: string;
+  title: string;
+  summary: string;
+}
+
+export interface TimelineData {
+  status: string;
+  requires_claude_approval?: boolean;
+  source?: string;
+  note?: string;
+  items: TimelineItem[];
+}
+
+export interface GuideCropItem {
+  id: string;
+  class: string;
+  cls_id: number;
+  variant: number;
+  filename: string;
+  path: string;
+  kart_no: string;
+  source_image: string;
+  gt_box_orig: [number, number, number, number];
+  crop_box_orig: [number, number, number, number];
+  box_in_crop: [number, number, number, number];
+}
+
+export interface GuideIndexData {
+  split: string;
+  allowed_cards: string[];
+  crop_size: number;
+  dataset_note: string;
+  items: GuideCropItem[];
+}
+
+export interface HistoryRecord {
+  id: string;
+  createdAt: string;
+  filename: string;
+  thumbnailDataUrl: string;
+  confThreshold: number;
+  verdict: "PASS" | "FAIL";
+  defectCount: number;
+  result: DetectResult;
+}
+
 
 export interface HealthResponse {
   status: string;

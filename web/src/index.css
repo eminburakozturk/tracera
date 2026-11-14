@@ -4,40 +4,84 @@
 @layer base {
   :root {
     color-scheme: light;
-    --bg-canvas: #eef2f6;
+    --surface: #f1f5f9;
+    --surface-container-lowest: #e2e8f0;
+    --surface-container-low: #ffffff;
+    --surface-container: #f1f5f9;
+    --surface-container-high: #e2e8f0;
+    --surface-container-highest: #cbd5e1;
+
+    --bg-canvas: #f1f5f9;
     --bg-surface: #ffffff;
     --bg-elevated: #f1f5f9;
     --bg-subtle: #cbd5e1;
+
     --border-hairline: #94a3b8;
     --border-strong: #64748b;
+
+    --on-surface: #0f172a;
+    --on-surface-variant: #1e293b;
     --text-primary: #0f172a;
     --text-secondary: #1e293b;
     --text-muted: #334155;
+
+    --primary: #0369a1;
+    --primary-container: #0284c7;
+    --secondary: #0369a1;
+    --tertiary: #075985;
+
     --accent: #0369a1;
     --accent-hover: #075985;
     --accent-contrast: #ffffff;
     --accent-soft: #e0f2fe;
     --accent-ink: #075985;
-    --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.1), 0 6px 20px rgba(15, 23, 42, 0.08);
+
+    --status-pass: #047857;
+    --status-warn: #b45309;
+    --status-fail: #b91c1c;
+
+    --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.08), 0 6px 20px rgba(15, 23, 42, 0.06);
   }
 
   .dark {
     color-scheme: dark;
-    --bg-canvas: #090d14;
-    --bg-surface: #101722;
-    --bg-elevated: #161f2e;
-    --bg-subtle: #1d283a;
-    --border-hairline: #233044;
-    --border-strong: #364761;
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #94a3b8;
-    --accent: #38bdf8;
-    --accent-hover: #7dd3fc;
-    --accent-contrast: #06131f;
-    --accent-soft: rgba(56, 189, 248, 0.14);
-    --accent-ink: #7dd3fc;
-    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.35);
+    --surface: #0c1322;
+    --surface-container-lowest: #070e1d;
+    --surface-container-low: #141b2b;
+    --surface-container: #191f2f;
+    --surface-container-high: #232a3a;
+    --surface-container-highest: #2e3545;
+
+    --bg-canvas: #0c1322;
+    --bg-surface: #141b2b;
+    --bg-elevated: #191f2f;
+    --bg-subtle: #232a3a;
+
+    --border-hairline: #283347;
+    --border-strong: #3d494c;
+
+    --on-surface: #dce2f7;
+    --on-surface-variant: #bcc9cd;
+    --text-primary: #dce2f7;
+    --text-secondary: #bcc9cd;
+    --text-muted: #98a6ac;
+
+    --primary: #4cd7f6;
+    --primary-container: #06b6d4;
+    --secondary: #5de6ff;
+    --tertiary: #6cd3f7;
+
+    --accent: #4cd7f6;
+    --accent-hover: #5de6ff;
+    --accent-contrast: #070e1d;
+    --accent-soft: rgba(76, 215, 246, 0.14);
+    --accent-ink: #5de6ff;
+
+    --status-pass: #10b981;
+    --status-warn: #f59e0b;
+    --status-fail: #ef4444;
+
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(7, 14, 29, 0.48);
   }
 
   html,
@@ -55,7 +99,7 @@
   }
 
   .font-mono {
-    font-family: "IBM Plex Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 }
 
@@ -67,6 +111,12 @@
 
 .elevated-card {
   background-color: var(--bg-elevated);
+  border: 1px solid var(--border-hairline);
+}
+
+.glass-panel {
+  background-color: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--border-hairline);
 }
 
@@ -82,4 +132,15 @@
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
