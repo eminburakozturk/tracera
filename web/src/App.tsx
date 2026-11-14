@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { AboutView } from "./components/AboutView";
+import { BatchView, type BatchQueueItem } from "./components/BatchView";
 import { DetectView } from "./components/DetectView";
 import { ExplainView } from "./components/ExplainView";
 import { HomeView } from "./components/HomeView";
@@ -590,6 +591,25 @@ export function App() {
               {activeTab === "live" && <LiveView />}
               {activeTab === "explain" && (
                 <ExplainView onRunExplain={handleRunExplain} />
+              )}
+              {activeTab === "batch" && (
+                <BatchView
+                  onDetectFile={async (file, conf) => {
+                    const detector = createDetector();
+                    return await detector.detect(file, conf);
+                  }}
+                  onOpenInInspect={(item: BatchQueueItem) => {
+                    if (!item.result) return;
+                    const url = URL.createObjectURL(item.file);
+                    setSelectedImage({
+                      file: item.file,
+                      url,
+                      name: item.filename,
+                    });
+                    setDetectResult(item.result);
+                    setActiveTab("detect");
+                  }}
+                />
               )}
               {activeTab === "results" && <ResultsView />}
               {(activeTab === "about" || activeTab === "developer") && (
