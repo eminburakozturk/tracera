@@ -117,4 +117,90 @@ test.describe("Tracera v1.1 Tam Ekran Matrisi: Axe WCAG AA (Koyu + Açık), Mobi
       await context.close();
     });
   }
+
+  test("Mobil dokunuş (390x844, hasTouch): Düşük güven 'i' düğmesi dokunuşla popover açar ve WCAG AA / yatay taşma temizdir", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      colorScheme: "light",
+    });
+    const page = await context.newPage();
+
+    await page.route("http://127.0.0.1:8765/**", async (route) => {
+      const url = route.request().url();
+      if (url.endsWith("/health")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            status: "ok",
+            model: "yolo11s",
+            version: "1.1.0",
+            device: "CPU",
+            backends: ["openvino-int8"],
+          }),
+        });
+        return;
+      }
+      if (url.endsWith("/detect")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            width: 3056,
+            height: 2464,
+            detections: [
+              {
+                id: 0,
+                cls: "spur",
+                cls_id: 4,
+                conf: 0.45,
+                box: [120, 140, 220, 230],
+              },
+              {
+                id: 1,
+                cls: "short",
+                cls_id: 3,
+                conf: 0.6,
+                box: [320, 340, 420, 430],
+              },
+            ],
+            timing: { pre_ms: 4.1, model_ms: 37.3, post_ms: 1.5, total_ms: 42.9 },
+            backend: "openvino-int8",
+          }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto("/");
+    await page.getByTestId("backend-select").click();
+    await page.getByRole("option", { name: /FastAPI/i }).click();
+
+    await expect(page.getByTestId("low-conf-badge-0")).toContainText(
+      "Düşük güven: gözden geçirin",
+      { timeout: 15_000 },
+    );
+    await expect(page.getByTestId("low-conf-badge-1")).toHaveCount(0);
+
+    const infoBtn = page.getByTestId("low-conf-info-btn-0");
+    await expect(page.getByTestId("low-conf-popover-0")).toHaveCount(0);
+    await infoBtn.tap();
+
+    const popover = page.getByTestId("low-conf-popover-0");
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText(
+      "Test setinde bu güven aralığındaki tespitlerin çoğu yanlış pozitifti; bu etiket değerlendirmeden sonra eklendi.",
+    );
+    const popoverId = await popover.getAttribute("id");
+    expect(popoverId).toBeTruthy();
+    await expect(infoBtn).toHaveAttribute("aria-describedby", popoverId!);
+
+    await assertNoHorizontalOverflow(page, "mobile-touch-low-conf-popover");
+    await assertNoContrastViolations(page, "mobile-touch-low-conf-popover");
+    await context.close();
+  });
 });
