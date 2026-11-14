@@ -6,6 +6,7 @@ import { AboutView } from "./components/AboutView";
 import { BatchView, type BatchQueueItem } from "./components/BatchView";
 import { DetectView } from "./components/DetectView";
 import { ExplainView } from "./components/ExplainView";
+import { HistoryView } from "./components/HistoryView";
 import { HomeView } from "./components/HomeView";
 import { LiveView } from "./components/LiveView";
 import { MobileNav } from "./components/MobileNav";
@@ -610,6 +611,9 @@ export function App() {
                     setActiveTab("detect");
                   }}
                 />
+              )}
+              {activeTab === "history" && (
+                <HistoryView onOpenRecord={handleOpenHistoryRecord} />
               )}
               {activeTab === "results" && <ResultsView />}
               {(activeTab === "about" || activeTab === "developer") && (
