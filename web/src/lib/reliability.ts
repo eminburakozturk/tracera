@@ -53,6 +53,8 @@ export function formatSplitReliability(
     return null;
   }
   const label = split === "val" ? "Val" : "Test";
+  const decimals = (v: number) => (String(v).split(".")[1] ?? "").length;
+  const binRange = `${fmtNum(bin.min, decimals(bin.min), lang)}–${fmtNum(bin.max, decimals(bin.max), lang)}`;
   const precisionPct = fmtNum(bin.precision * 100, 1, lang);
   const lowSample = bin.n < 20;
   const shortText =
@@ -63,7 +65,7 @@ export function formatSplitReliability(
   return {
     split,
     label,
-    binRange: bin.bin,
+    binRange,
     precision: bin.precision,
     precisionPct,
     n: bin.n,
@@ -107,7 +109,7 @@ export function buildReliabilitySummary(
   const headlineText =
     lang === "en"
       ? `${splitNameEn}, ${single.precisionPct}% of detections in this confidence bin (${single.binRange}) were correct (n=${single.n}).`
-      : `${splitNameTr} bu güven aralığındaki (${single.binRange}) tespitlerin %${single.precisionPct}'i doğruydu (n=${single.n}).`;
+      : `${splitNameTr} bu güven aralığında (${single.binRange}) doğru tespit oranı: %${single.precisionPct} (n=${single.n}).`;
 
   return {
     binRange: single.binRange,

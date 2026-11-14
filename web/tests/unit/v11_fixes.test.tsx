@@ -8,15 +8,26 @@ import { METRICS_FALLBACK } from "../../src/fixtures";
 import i18n from "../../src/i18n";
 import { MOCK_ENABLED } from "../../src/lib/env";
 import { fmtMeanStd, fmtMs, fmtNum, fmtPct } from "../../src/lib/format";
+import { buildReliabilitySummary } from "../../src/lib/reliability";
 import { selectOpenVinoInt8Row } from "../../src/lib/metrics";
 import { useAppStore } from "../../src/store/useAppStore";
-import type { MetricsPayload, PrCurveData } from "../../src/types";
+import type {
+  MetricsPayload,
+  PrCurveData,
+  ReliabilityData,
+} from "../../src/types";
 
 const webRoot = path.resolve(__dirname, "../..");
 const PR_CURVE = JSON.parse(
   fs.readFileSync(path.join(webRoot, "public/data/pr_curve_val.json"), "utf-8"),
 ) as PrCurveData;
 const METRICS = METRICS_FALLBACK as unknown as MetricsPayload;
+const readRel = (name: string) =>
+  JSON.parse(
+    fs.readFileSync(path.join(webRoot, `public/data/${name}`), "utf-8"),
+  ) as ReliabilityData;
+const REL_VAL = readRel("reliability_val.json");
+const REL_TEST = readRel("reliability_test.json");
 
 describe("v1.1 düzeltmeleri (Claude incelemesi, 2026-11-14)", () => {
   beforeEach(async () => {
@@ -103,5 +114,15 @@ describe("v1.1 düzeltmeleri (Claude incelemesi, 2026-11-14)", () => {
       'href="https://www.linkedin.com/in/emin-burak-%C3%B6zt%C3%BCrk-85a674395/"',
     );
     expect(about).toContain("linkedin.com/in/emin-burak-öztürk");
+  });
+
+  it("Güvenilirlik kartı: aralık TR biçiminde, Türkçe ek kalıbı yok, tek bölmede bölme adı açık", () => {
+    const both = buildReliabilitySummary(0.45, REL_VAL, REL_TEST, "tr");
+    expect(both!.binRange).toBe("0,395–0,5");
+    const single = buildReliabilitySummary(0.85, REL_VAL, null, "tr");
+    expect(single!.headlineText).toContain("doğru tespit oranı: %97,5");
+    expect(single!.headlineText).not.toMatch(/'i doğruydu|'ü doğruydu|'sı doğruydu/);
+    const en = buildReliabilitySummary(0.45, REL_VAL, REL_TEST, "en");
+    expect(en!.binRange).toBe("0.395–0.5");
   });
 });

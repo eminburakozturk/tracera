@@ -442,8 +442,8 @@ export function ExplainView({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-medium text-[var(--text-secondary)]">
                     {lang === "en"
-                      ? `Dataset precision in bin [${reliabilitySummary.binRange}]`
-                      : `Veri kümesinde [${reliabilitySummary.binRange}] güven aralığı isabeti`}
+                      ? `Share of correct detections at confidence ${reliabilitySummary.binRange}`
+                      : `${reliabilitySummary.binRange} güven aralığında doğru tespit oranı`}
                   </span>
                   {(reliabilitySummary.valPart?.lowSample ||
                     reliabilitySummary.testPart?.lowSample) && (
@@ -461,11 +461,14 @@ export function ExplainView({
                 >
                   {reliabilitySummary.headlineText}
                 </p>
-                {reliabilitySummary.valPart && (
-                  <p className="text-xs text-[var(--text-secondary)]">
+                {reliabilitySummary.valPart && reliabilitySummary.testPart && (
+                  <p
+                    className="text-xs text-[var(--text-secondary)]"
+                    data-testid="reliability-val-caveat"
+                  >
                     {lang === "en"
-                      ? `In the Val split, ${reliabilitySummary.valPart.precisionPct}% of detections in this confidence bin were correct (n=${reliabilitySummary.valPart.n}).`
-                      : `Val setinde bu güven aralığındaki tespitlerin %${reliabilitySummary.valPart.precisionPct}'i doğruydu (n=${reliabilitySummary.valPart.n}).`}
+                      ? "The threshold was chosen on the validation split, so its rate is optimistic; the test rate comes from unseen boards (2 boards)."
+                      : "Eşik doğrulama (val) setinde seçildiği için val oranı iyimserdir; test oranı modelin hiç görmediği 2 karttan gelir."}
                   </p>
                 )}
               </div>
