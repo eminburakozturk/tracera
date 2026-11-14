@@ -203,6 +203,32 @@ flowchart LR
 - **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `Tracera_1.0.0_x64-setup.exe`, `315.03 MiB`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).
 - **Android APK (Tauri 2 WebView — `Tracera_1.0.0_android_arm64.apk`, `58.29 MiB` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = "android"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.
 
+### Uygulama Ekranları (v1.1)
+
+Aynı arayüz web, Windows ve Android'de çalışır; koyu/açık tema, Türkçe/İngilizce. Ekranlar: Ana Sayfa, Muayene, Açıklama, Toplu Muayene, Geçmiş (cihazda), Kusur Rehberi, Sonuçlar, Geliştirici, Ayarlar. Muayene raporu PDF olarak cihazda üretilir ve standart uygunluk belgesi değildir.
+
+**Ana Sayfa**
+
+![Ana Sayfa](results/ui_v11/home_desktop_dark.png)
+
+**Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi**
+
+![Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi](results/ui_v11/detect_desktop_dark.png)
+
+**Açıklama: LayerCAM ve "Bu karar nasıl verildi?"**
+
+![Açıklama: LayerCAM ve "Bu karar nasıl verildi?"](results/ui_v11/explain_desktop_dark.png)
+
+**Sonuçlar (açık tema)**
+
+![Sonuçlar (açık tema)](results/ui_v11/results_desktop_light.png)
+
+| Muayene (mobil) | Açıklama (mobil, açık) | Kusur Rehberi (mobil) |
+|---|---|---|
+| <img src="results/ui_v11/detect_mobile_dark.png" width="240" alt="Muayene (mobil)"> | <img src="results/ui_v11/explain_mobile_light.png" width="240" alt="Açıklama (mobil, açık)"> | <img src="results/ui_v11/guide_mobile_dark.png" width="240" alt="Kusur Rehberi (mobil)"> |
+
+Güveni `0.6`'nın altındaki tespitler arayüzde *"Düşük güven: gözden geçirin"* etiketi alır (Bölüm 4'teki güven aralığı tablosuna dayanan, test sonrası eklenmiş kullanılabilirlik özelliği).
+
 ### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)
 
 10 val görüntüsü üzerinde (`results/web_parity.csv`, `conf = 0.25` iki yönlü IoU ≥ 0.5 eşleşmesi ve `conf = 0.395` sayım kıyası):

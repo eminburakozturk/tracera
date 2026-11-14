@@ -311,6 +311,46 @@ def _build_reliability_section(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+
+def _ui_v11_section() -> list[str]:
+    """v1.1 arayüz ekranları: yalnız results/ui_v11/ altında gerçekten var olan görüntüler."""
+    shots = [
+        ("home_desktop_dark.png", "Ana Sayfa"),
+        ("detect_desktop_dark.png", "Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi"),
+        ("explain_desktop_dark.png", "Açıklama: LayerCAM ve \"Bu karar nasıl verildi?\""),
+        ("results_desktop_light.png", "Sonuçlar (açık tema)"),
+    ]
+    mobile = [
+        ("detect_mobile_dark.png", "Muayene (mobil)"),
+        ("explain_mobile_light.png", "Açıklama (mobil, açık)"),
+        ("guide_mobile_dark.png", "Kusur Rehberi (mobil)"),
+    ]
+    ui_dir = REPO_ROOT / "results" / "ui_v11"
+    present = [(f, c) for f, c in shots if (ui_dir / f).exists()]
+    present_m = [(f, c) for f, c in mobile if (ui_dir / f).exists()]
+    if not present and not present_m:
+        return []
+    out = [
+        "### Uygulama Ekranları (v1.1)",
+        "",
+        "Aynı arayüz web, Windows ve Android'de çalışır; koyu/açık tema, Türkçe/İngilizce. Ekranlar: Ana Sayfa, Muayene, Açıklama, Toplu Muayene, Geçmiş (cihazda), Kusur Rehberi, Sonuçlar, Geliştirici, Ayarlar. Muayene raporu PDF olarak cihazda üretilir ve standart uygunluk belgesi değildir.",
+        "",
+    ]
+    for f, c in present:
+        out += [f"**{c}**", "", f"![{c}](results/ui_v11/{f})", ""]
+    if present_m:
+        out += [
+            "| " + " | ".join(c for _, c in present_m) + " |",
+            "|" + "---|" * len(present_m),
+            "| " + " | ".join(f'<img src="results/ui_v11/{f}" width="240" alt="{c}">' for f, c in present_m) + " |",
+            "",
+        ]
+    out += [
+        "Güveni `0.6`'nın altındaki tespitler arayüzde *\"Düşük güven: gözden geçirin\"* etiketi alır (Bölüm 4'teki güven aralığı tablosuna dayanan, test sonrası eklenmiş kullanılabilirlik özelliği).",
+        "",
+    ]
+    return out
+
 def _build_everywhere_section(data: dict[str, Any]) -> str:
     parity_images = data["parity_images"]
     parity_summary = data["parity_summary"]
@@ -363,6 +403,7 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
         f"- **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `{rel['exe_name']}`, `{exe_size_label}`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).",
         f"- **Android APK (Tauri 2 WebView — `{rel['apk_name']}`, `{rel['apk_mib']}` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = \"android\"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.",
         "",
+        *_ui_v11_section(),
         "### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)",
         "",
         f"{len(parity_images)} val görüntüsü üzerinde (`results/web_parity.csv`, `conf = 0.25` iki yönlü IoU ≥ 0.5 eşleşmesi ve `conf = 0.395` sayım kıyası):",
