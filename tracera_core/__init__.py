@@ -26,8 +26,10 @@ from tracera_core.engine import (
     ModelManager,
     MultiLayerYoloCAM,
     active_detect_backend,
+    compute_cam_box_metrics,
     detect_openvino,
     explain_layercam,
+    explain_layercam_with_metrics,
     make_overlay_and_zoom,
 )
 from tracera_core.metrics_loader import build_metrics_payload
@@ -69,8 +71,10 @@ __all__ = [
     "box_lb_to_orig",
     "box_orig_to_lb",
     "build_metrics_payload",
+    "compute_cam_box_metrics",
     "detect_openvino",
     "explain_layercam",
+    "explain_layercam_with_metrics",
     "get_repo_root",
     "letterbox_image",
     "load_meta",

@@ -36,3 +36,6 @@ class ExplainResult(BaseModel):
     method: Literal["layercam"] = "layercam"
     layer: Literal[4] = 4
     timing: Timing
+    energy_in_box: float = Field(..., ge=0.0, le=1.0)
+    peak_in_box: bool
+    peak_xy: list[int] = Field(..., min_length=2, max_length=2)

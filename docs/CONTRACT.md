@@ -26,7 +26,7 @@ Değişiklik yalnızca Claude onayıyla yapılır; değişirse sürüm numarası
 type Detection = { id: number; cls: string; cls_id: number; conf: number; box: [number, number, number, number] }; // x1,y1,x2,y2 orijinal piksel
 type Timing = { pre_ms: number; model_ms: number; post_ms: number; total_ms: number };
 type DetectResult = { width: number; height: number; detections: Detection[]; timing: Timing; backend: string }; // backend: "ort-webgpu" | "ort-wasm" | "openvino-int8" | "pytorch"
-type ExplainResult = { overlay_png: string; zoom_png: string; method: "layercam"; layer: 4; timing: Timing }; // png'ler base64 (data URL değil, ham base64)
+type ExplainResult = { overlay_png: string; zoom_png: string; method: "layercam"; layer: 4; timing: Timing; energy_in_box: number; peak_in_box: boolean; peak_xy: [number, number] }; // png'ler base64 (data URL değil, ham base64); v1.3 metrikleri §7'de tanımlıdır
 ```
 
 ## 3. Yerel API (FastAPI, `api/`, varsayılan `http://127.0.0.1:8765`)
@@ -59,3 +59,9 @@ type ExplainResult = { overlay_png: string; zoom_png: string; method: "layercam"
 - Yeni komut `get_platform` → `"windows" | "android" | "other"`.
 - Web: `available=false` ise "Yerel motor başlatılıyor" ekranı GÖSTERİLMEZ; varsayılan motor "Cihazda (tarayıcı/ORT)"; "Yerel sunucu" seçeneği gizlenir; ısı haritası yalnız Bulut'tan (ebboo/tracera) denenir, erişilemezse mevcut "Bulut açıklaması şu an kullanılamıyor" mesajı.
 - Android'de ONNX modeli ve ORT dosyaları APK içinde paketlenir (çevrimdışı tespit); ağ yalnız bulut açıklaması için.
+
+## 7. v1.3 (2026-11-14) — `ExplainResult` ısı haritası özet metrikleri
+- `ExplainResult` şemasına (`tracera_core`, yerel FastAPI `/explain`, Gradio Space `/explain_api`) üç alan eklenir; ısı haritası üretimi ve görüntünün (`overlay_png`, `zoom_png`) kendisi değişmez:
+  - `energy_in_box: number` (`0.0`–`1.0`): Orijinal boyutlu `cam_orig` ısı haritası toplam enerjisinin seçili `box` içindeki payı (`sum(cam_orig[y1:y2, x1:x2]) / sum(cam_orig)`).
+  - `peak_in_box: boolean`: Isı haritası küresel tepe noktasının (`argmax(cam_orig)`) seçili `box` (`x1 <= x <= x2 && y1 <= y <= y2`) içinde olup olmadığı.
+  - `peak_xy: [number, number]`: Küresel tepe noktasının orijinal görüntü piksel koordinatı (`[x, y]`, tam sayı; `overlay_png` üzerindeki beyaz `+` işaretinin konumu).

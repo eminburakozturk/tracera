@@ -157,7 +157,36 @@ def detect_openvino(
     )
 
 
-def explain_layercam(
+def compute_cam_box_metrics(
+    cam_orig: np.ndarray,
+    box_orig: tuple[float, float, float, float],
+) -> tuple[float, bool, list[int]]:
+    """Isı haritasından kutu içi enerji payı (0-1), tepe noktasının kutuda olup olmadığı ve tepe piksel koordinatını hesaplar."""
+    h, w = cam_orig.shape[:2]
+    max_y, max_x = np.unravel_index(int(np.argmax(cam_orig)), cam_orig.shape)
+    peak_xy = [int(max_x), int(max_y)]
+
+    total_energy = float(np.sum(cam_orig, dtype=np.float64))
+    if total_energy <= 1e-8:
+        return 0.0, False, peak_xy
+
+    x1, y1, x2, y2 = (float(v) for v in box_orig)
+    ix1 = max(0, min(w, int(round(x1))))
+    iy1 = max(0, min(h, int(round(y1))))
+    ix2 = max(0, min(w, int(round(x2))))
+    iy2 = max(0, min(h, int(round(y2))))
+
+    if ix2 > ix1 and iy2 > iy1:
+        box_energy = float(np.sum(cam_orig[iy1:iy2, ix1:ix2], dtype=np.float64))
+        energy_in_box = round(max(0.0, min(1.0, box_energy / total_energy)), 6)
+    else:
+        energy_in_box = 0.0
+
+    peak_in_box = bool(x1 <= max_x <= x2 and y1 <= max_y <= y2)
+    return energy_in_box, peak_in_box, peak_xy
+
+
+def explain_layercam_with_metrics(
     img_bgr: np.ndarray,
     box_orig: tuple[float, float, float, float],
     cls_id: int,
@@ -166,8 +195,8 @@ def explain_layercam(
     label_str: str | None = None,
     box_color_rgb: tuple[int, int, int] | None = None,
     manager: ModelManager | None = None,
-) -> tuple[np.ndarray, np.ndarray, Timing]:
-    """scripts/gradcam.py üzerinden LayerCAM @ katman 4 overlay/zoom RGB görüntüleri ve süreleri üretir."""
+) -> tuple[np.ndarray, np.ndarray, Timing, dict[str, object]]:
+    """LayerCAM @ katman 4 overlay/zoom RGB görüntüleri, süreleri ve özet kutu metriklerini üretir."""
     mgr = manager or MODELS
     t0 = time.perf_counter()
     tensor_x, lb = preprocess_tensor(img_bgr, imgsz=imgsz)
@@ -198,6 +227,7 @@ def explain_layercam(
         label_str=lbl,
         box_color_rgb=color_rgb,
     )
+    energy_in_box, peak_in_box, peak_xy = compute_cam_box_metrics(cam_orig, box_orig)
     t_end = time.perf_counter()
 
     timing = Timing(
@@ -205,5 +235,33 @@ def explain_layercam(
         model_ms=round((t_model - t_pre) * 1000.0, 3),
         post_ms=round((t_end - t_model) * 1000.0, 3),
         total_ms=round((t_end - t0) * 1000.0, 3),
+    )
+    metrics: dict[str, object] = {
+        "energy_in_box": energy_in_box,
+        "peak_in_box": peak_in_box,
+        "peak_xy": peak_xy,
+    }
+    return overlay_rgb, zoom_crop_rgb, timing, metrics
+
+
+def explain_layercam(
+    img_bgr: np.ndarray,
+    box_orig: tuple[float, float, float, float],
+    cls_id: int,
+    *,
+    imgsz: int = IMGSZ,
+    label_str: str | None = None,
+    box_color_rgb: tuple[int, int, int] | None = None,
+    manager: ModelManager | None = None,
+) -> tuple[np.ndarray, np.ndarray, Timing]:
+    """scripts/gradcam.py üzerinden LayerCAM @ katman 4 overlay/zoom RGB görüntüleri ve süreleri üretir."""
+    overlay_rgb, zoom_crop_rgb, timing, _metrics = explain_layercam_with_metrics(
+        img_bgr=img_bgr,
+        box_orig=box_orig,
+        cls_id=cls_id,
+        imgsz=imgsz,
+        label_str=label_str,
+        box_color_rgb=box_color_rgb,
+        manager=manager,
     )
     return overlay_rgb, zoom_crop_rgb, timing

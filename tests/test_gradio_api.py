@@ -89,6 +89,12 @@ def test_gradio_api_detect_and_explain() -> None:
         assert exp_out["method"] == "layercam"
         assert exp_out["layer"] == 4
         assert exp_out["timing"]["total_ms"] > 0
+        assert isinstance(exp_out["energy_in_box"], float)
+        assert 0.0 <= exp_out["energy_in_box"] <= 1.0
+        assert isinstance(exp_out["peak_in_box"], bool)
+        assert isinstance(exp_out["peak_xy"], list) and len(exp_out["peak_xy"]) == 2
+        assert 0 <= exp_out["peak_xy"][0] < det_out["width"]
+        assert 0 <= exp_out["peak_xy"][1] < det_out["height"]
 
         for field in ("overlay_png", "zoom_png"):
             b64_str = exp_out[field]

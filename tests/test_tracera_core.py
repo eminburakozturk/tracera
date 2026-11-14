@@ -25,8 +25,10 @@ from tracera_core import (  # noqa: E402
     RESULTS_DIR,
     DetectResult,
     build_metrics_payload,
+    compute_cam_box_metrics,
     detect_openvino,
     explain_layercam,
+    explain_layercam_with_metrics,
     preprocess_letterbox,
     preprocess_tensor,
 )
@@ -115,6 +117,7 @@ def test_detect_openvino_matches_reference_output(record_property) -> None:
 def test_explain_layercam_returns_rgb_arrays() -> None:
     img_bgr = cv2.imread(str(VAL_IMAGE_PATH))
     assert img_bgr is not None
+    h, w = img_bgr.shape[:2]
     res = detect_openvino(img_bgr)
     top = res.detections[0]
     overlay_rgb, zoom_rgb, timing = explain_layercam(
@@ -125,6 +128,41 @@ def test_explain_layercam_returns_rgb_arrays() -> None:
     assert isinstance(overlay_rgb, np.ndarray) and overlay_rgb.ndim == 3 and overlay_rgb.shape[2] == 3
     assert isinstance(zoom_rgb, np.ndarray) and zoom_rgb.ndim == 3 and zoom_rgb.shape[2] == 3
     assert timing.total_ms > 0
+
+    overlay2, zoom2, timing2, cam_metrics = explain_layercam_with_metrics(
+        img_bgr=img_bgr,
+        box_orig=tuple(top.box),  # type: ignore[arg-type]
+        cls_id=top.cls_id,
+    )
+    assert np.array_equal(overlay2, overlay_rgb)
+    assert np.array_equal(zoom2, zoom_rgb)
+    assert timing2.total_ms > 0
+    assert 0.0 <= float(cam_metrics["energy_in_box"]) <= 1.0
+    assert isinstance(cam_metrics["peak_in_box"], bool)
+    px, py = cam_metrics["peak_xy"]
+    assert isinstance(px, int) and isinstance(py, int)
+    assert 0 <= px < w and 0 <= py < h
+
+
+def test_compute_cam_box_metrics_unit() -> None:
+    cam = np.zeros((10, 12), dtype=np.float32)
+    cam[2:6, 4:8] = 0.5
+    cam[4, 6] = 1.0
+    energy, peak_in_box, peak_xy = compute_cam_box_metrics(cam, (4.0, 2.0, 8.0, 6.0))
+    assert energy == 1.0
+    assert peak_in_box is True
+    assert peak_xy == [6, 4]
+
+    # Tepe kutunun dışında olduğunda
+    energy_out, peak_out, peak_xy_out = compute_cam_box_metrics(cam, (0.0, 0.0, 3.0, 3.0))
+    assert energy_out == 0.0
+    assert peak_out is False
+    assert peak_xy_out == [6, 4]
+
+    # Sıfır enerji haritasında sıfıra bölme olmaz
+    zeros = np.zeros((8, 8), dtype=np.float32)
+    ez, pz, _ = compute_cam_box_metrics(zeros, (1.0, 1.0, 4.0, 4.0))
+    assert ez == 0.0 and pz is False
 
 
 def test_metrics_loader_matches_web_metrics() -> None:

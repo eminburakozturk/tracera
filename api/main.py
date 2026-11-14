@@ -46,7 +46,7 @@ from tracera_core import (  # noqa: E402
     RESULTS_DIR,
     build_metrics_payload,
     detect_openvino,
-    explain_layercam,
+    explain_layercam_with_metrics,
     load_meta,
 )
 
@@ -204,7 +204,7 @@ async def post_explain(
     meta = load_meta()
     imgsz = int(meta.get("imgsz", IMGSZ))
 
-    overlay_rgb, zoom_crop_rgb, timing = explain_layercam(
+    overlay_rgb, zoom_crop_rgb, timing, cam_metrics = explain_layercam_with_metrics(
         img_bgr=img_bgr,
         box_orig=box_orig,
         cls_id=cls_id,
@@ -217,6 +217,9 @@ async def post_explain(
         method="layercam",
         layer=4,
         timing=timing,
+        energy_in_box=float(cam_metrics["energy_in_box"]),
+        peak_in_box=bool(cam_metrics["peak_in_box"]),
+        peak_xy=list(cam_metrics["peak_xy"]),
     )
 
 

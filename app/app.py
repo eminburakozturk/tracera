@@ -65,7 +65,7 @@ from tracera_core import (  # noqa: E402
     MultiLayerYoloCAM,
     box_orig_to_lb,
     detect_openvino,
-    explain_layercam,
+    explain_layercam_with_metrics,
     letterbox_image,
     make_overlay_and_zoom,
 )
@@ -492,14 +492,14 @@ def detect_api(image: FileData, conf: float = DEFAULT_CONF) -> dict[str, Any]:
 
 
 def explain_api(image: FileData, box: str, cls_id: int) -> dict[str, Any]:
-    """CONTRACT §2 ExplainResult JSON döndüren arayüzsüz Gradio API ucu (LayerCAM @ katman 4)."""
+    """CONTRACT §2 ve §7 ExplainResult JSON döndüren arayüzsüz Gradio API ucu (LayerCAM @ katman 4)."""
     cls_int = int(cls_id)
     if cls_int not in CLASS_NAMES:
         raise gr.Error(f"Geçersiz cls_id={cls_int}; beklenen aralık: 0..{len(CLASS_NAMES) - 1}.")
     img_bgr = _decode_api_image_bgr(image)
     h, w = img_bgr.shape[:2]
     box_orig = _parse_api_box(box, img_w=w, img_h=h)
-    overlay_rgb, zoom_rgb, timing = explain_layercam(
+    overlay_rgb, zoom_rgb, timing, cam_metrics = explain_layercam_with_metrics(
         img_bgr=img_bgr,
         box_orig=box_orig,
         cls_id=cls_int,
@@ -512,6 +512,9 @@ def explain_api(image: FileData, box: str, cls_id: int) -> dict[str, Any]:
         method="layercam",
         layer=4,
         timing=timing,
+        energy_in_box=float(cam_metrics["energy_in_box"]),
+        peak_in_box=bool(cam_metrics["peak_in_box"]),
+        peak_xy=list(cam_metrics["peak_xy"]),
     ).model_dump()
 
 
