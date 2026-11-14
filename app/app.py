@@ -76,6 +76,15 @@ from tracera_core import (  # noqa: E402
 # -----------------------------------------------------------------------------
 # Dinamik Metrik Yükleyicileri
 # -----------------------------------------------------------------------------
+def _tr_num(value: float, digits: int) -> str:
+    """Arayüz metni için Türkçe ondalık (virgül). API yanıtları bunu kullanmaz."""
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
+def _tr_pct(fraction: float, digits: int = 1) -> str:
+    return f"%{_tr_num(fraction * 100.0, digits)}"
+
+
 def load_dynamic_metrics_markdown() -> str:
     """results/*.csv dosyalarından güncel ve doğrulanmış metrikleri dinamik çeker."""
     op_path = RESULTS_DIR / "operating_point.csv"
@@ -104,7 +113,7 @@ def load_dynamic_metrics_markdown() -> str:
                 loc_fp = int(row.get("konum_hatası_FP", 0))
                 fn = int(row.get("FN", 0))
                 md_lines.append(
-                    f"| **{split_name}** | {conf:.3f} | {p*100:.1f}% | {r*100:.1f}% | **{f1*100:.1f}%** | "
+                    f"| **{split_name}** | {_tr_num(conf, 3)} | {_tr_pct(p)} | {_tr_pct(r)} | **{_tr_pct(f1)}** | "
                     f"{tp} | {fp} | {bg_fp} | {loc_fp} | {fn} |"
                 )
             md_lines.append("")
@@ -210,7 +219,7 @@ def run_pcb_detection(
             }
             detections_list.append(det_item)
 
-            choice_label = f"#{i} — {cls_tr} (Güven: {conf_val:.3f}) @ [{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}]"
+            choice_label = f"#{i} — {cls_tr} (Güven: {_tr_num(float(conf_val), 3)}) @ [{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}]"
             dropdown_choices.append(choice_label)
 
             # Görsel üzerine kutu ve etiket çizimi
@@ -316,10 +325,10 @@ def run_explainability(
     peak_loc = "kutunun içinde" if bool(cam_metrics["peak_in_box"]) else "kutunun dışında"
 
     info_str = (
-        f"🎯 **Açıklama Üretildi:** #{idx} {cls_tr} (Güven: {det['conf']:.3f}) | "
+        f"🎯 **Açıklama Üretildi:** #{idx} {cls_tr} (Güven: {_tr_num(float(det['conf']), 3)}) | "
         f"**Yöntem:** LayerCAM @ Katman 4 (Backbone Stride 8) | "
         f"**Süre:** {cam_timing.total_ms:.1f} ms (PyTorch CPU)\n\n"
-        f"Isı haritası enerjisinin %{energy_pct:.1f}'si kutunun içinde; en sıcak nokta {peak_loc}."
+        f"Isı haritası enerjisinin kutu içindeki payı: %{_tr_num(energy_pct, 1)}; en sıcak nokta {peak_loc}."
     )
 
     return overlay_rgb, zoom_crop_rgb, info_str

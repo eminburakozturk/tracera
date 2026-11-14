@@ -161,7 +161,8 @@ def test_gradio_ui_v11_rules_and_api_contract_unchanged() -> None:
 
     overlay_rgb, zoom_rgb, info_str = gradio_app.run_explainability(state, choices[0])
     assert overlay_rgb is not None and zoom_rgb is not None
-    assert "Isı haritası enerjisinin %" in info_str
+    assert "Isı haritası enerjisinin kutu içindeki payı: %" in info_str
+    assert "'si kutunun" not in info_str  # Türkçe ek sayıya göre değişir; kalıp ekten kaçınır
     assert ("en sıcak nokta kutunun içinde." in info_str) or ("en sıcak nokta kutunun dışında." in info_str)
     assert any(tr_name in info_str for tr_name in expected_tr.values())
 
