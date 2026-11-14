@@ -94,6 +94,7 @@ Bu kontrol listesi, yeni bir Tracera sürümü (ör. `v1.1.0`) yayınlanırken d
 - [ ] GitHub üzerinde `https://github.com/eminburakozturk/tracera/releases/new` sayfasını aç.
 - [ ] **Tag:** `v1.1.0` seç (Hedef: `main`).
 - [ ] **Başlık:** `Tracera v1.1.0 — Web, Windows Masaüstü ve Android Sürümü`
+- [ ] **APK debug imzalı; sürüm notunda belirt:** Android APK paketinin portföy projesi kapsamında `debug` anahtarı ile imzalandığını, kurulumda Android *"Bilinmeyen kaynaklardan yükleme / Yine de yükle"* onayı gerektiğini sürüm notunda açıkça belirt.
 - [ ] **Açıklama:** İlgili sürüm notlarını (`docs/RELEASE_NOTES_v1.1.0.md` / `v1.0.0` şablonu) yapıştır; Windows SmartScreen (*"Ek bilgi → Yine de çalıştır"*) ve Android (*"Bilinmeyen kaynaklardan yükleme"*) kurulum notlarının yer aldığından emin ol.
 - [ ] **İkili dosyaları (`dist_release/` altından) ekle:**
   1. `Tracera_1.1.0_x64-setup.exe`

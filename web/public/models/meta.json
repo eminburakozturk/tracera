@@ -1,5 +1,6 @@
 {
   "version": "1.1.0",
+  "model_version": "1.0.0",
   "model": "yolo11s",
   "imgsz": 1024,
   "conf": 0.395,
@@ -21,5 +22,6 @@
     "#a78bfa",
     "#34d399"
   ],
-  "onnx": "tracera_1024.onnx"
+  "onnx": "tracera_1024.onnx",
+  "onnx_sha256": "aa8e1f42702c823426df778c9ff298293e8661010dce1d410ea89b6caccbb58c"
 }

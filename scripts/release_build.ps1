@@ -1,7 +1,6 @@
 ﻿[CmdletBinding()]
 param(
     [switch]$DryRun,
-    [switch]$RebuildSidecar,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ExtraArgs
 )
@@ -44,10 +43,43 @@ function Get-DirectoryStats([string]$DirPath) {
 }
 
 # =============================================================================
-# (g) Surum Tutarliligi Kontrolu (Tek Kaynak Dogrulamasi)
+# [1/3] Git Commit SHA ve Calisma Agaci Temizlik Kontrolu (1c)
 # =============================================================================
 Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host " [1/2] Surum Tutarliligi Kontrolu (g)" -ForegroundColor Cyan
+Write-Host " [1/3] Git Commit ve Calisma Agaci Kontrolu" -ForegroundColor Cyan
+Write-Host "==================================================================" -ForegroundColor Cyan
+
+Push-Location $RepoRoot
+try {
+    $CommitShaShort = (& git rev-parse --short HEAD 2>&1).ToString().Trim()
+    $CommitShaFull  = (& git rev-parse HEAD 2>&1).ToString().Trim()
+    $BranchName     = (& git rev-parse --abbrev-ref HEAD 2>&1).ToString().Trim()
+    $PorcelainLines = @(& git status --porcelain 2>&1 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+} finally {
+    Pop-Location
+}
+
+Write-Host (" - Dal / Commit SHA           = {0} ({1})" -f $BranchName, $CommitShaShort) -ForegroundColor Green
+if ($PorcelainLines.Count -gt 0) {
+    if ($DryRun) {
+        Write-Host (" - Calisma Agaci              [UYARI] Kirli ({0} degisiklik var; normal kosuda DURUR)" -f $PorcelainLines.Count) -ForegroundColor Yellow
+        foreach ($Line in ($PorcelainLines | Select-Object -First 8)) {
+            Write-Host ("     $Line") -ForegroundColor DarkYellow
+        }
+    } else {
+        Write-Error ("CALISMA AGACI KIRLI ({0} degisiklik)! Surum derlemesi yalniz temiz git agacinda calisir:`n{1}" -f $PorcelainLines.Count, ($PorcelainLines -join "`n"))
+        exit 1
+    }
+} else {
+    Write-Host " - Calisma Agaci              [TEMIZ] git status --porcelain bos" -ForegroundColor Green
+}
+
+# =============================================================================
+# [2/3] Surum Tutarliligi ve ONNX SHA256 Kontrolu (1b & 1g)
+# =============================================================================
+Write-Host ""
+Write-Host "==================================================================" -ForegroundColor Cyan
+Write-Host " [2/3] Surum Tutarliligi ve Model SHA256 Kontrolu (g & 1b)" -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 
 $WebPkgPath      = Join-Path $RepoRoot "web\package.json"
@@ -55,13 +87,17 @@ $DesktopPkgPath  = Join-Path $RepoRoot "desktop\package.json"
 $TauriConfPath   = Join-Path $RepoRoot "desktop\src-tauri\tauri.conf.json"
 $CargoTomlPath   = Join-Path $RepoRoot "desktop\src-tauri\Cargo.toml"
 $MetaJsonPath    = Join-Path $RepoRoot "web\public\models\meta.json"
+$OnnxModelPath   = Join-Path $RepoRoot "web\public\models\tracera_1024.onnx"
 $ApiMainPath     = Join-Path $RepoRoot "api\main.py"
 $CoreConfigPath  = Join-Path $RepoRoot "tracera_core\config.py"
 
 $WebVersion     = (Get-Content -LiteralPath $WebPkgPath -Raw | ConvertFrom-Json).version
 $DesktopVersion = (Get-Content -LiteralPath $DesktopPkgPath -Raw | ConvertFrom-Json).version
 $TauriVersion   = (Get-Content -LiteralPath $TauriConfPath -Raw | ConvertFrom-Json).version
-$MetaVersion    = (Get-Content -LiteralPath $MetaJsonPath -Raw | ConvertFrom-Json).version
+$MetaObj        = (Get-Content -LiteralPath $MetaJsonPath -Raw | ConvertFrom-Json)
+$MetaVersion    = $MetaObj.version
+$ModelVersion   = $MetaObj.model_version
+$ExpectedOnnxSha = $MetaObj.onnx_sha256
 
 $CargoRaw = Get-Content -LiteralPath $CargoTomlPath -Raw
 $CargoVersion = if ($CargoRaw -match '(?m)^version\s*=\s*"([^"]+)"') { $Matches[1] } else { "BULUNAMADI" }
@@ -97,14 +133,32 @@ if ($Mismatches.Count -gt 0) {
     Write-Error ("SURUM UYUSMAZLIGI TESPIT EDILDI! Derleme durduruldu:`n - " + ($Mismatches -join "`n - "))
     exit 1
 }
-Write-Host " -> Tekil surum dogrulandi: v$CanonicalVersion" -ForegroundColor Green
+
+if ([string]::IsNullOrWhiteSpace($ModelVersion)) {
+    Write-Error "meta.json icinde model_version alani eksik!"
+    exit 1
+}
+Write-Host (" - {0,-36} ({1,-11}) = {2,-10} [OK]" -f "web/public/models/meta.json", "model_ver", $ModelVersion) -ForegroundColor Green
+
+if (-not (Test-Path -LiteralPath $OnnxModelPath)) {
+    Write-Error "ONNX model dosyasi bulunamadi: $OnnxModelPath"
+    exit 1
+}
+$ActualOnnxSha = (Get-FileHash -LiteralPath $OnnxModelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ([string]::IsNullOrWhiteSpace($ExpectedOnnxSha) -or ($ActualOnnxSha -ne $ExpectedOnnxSha.ToLowerInvariant())) {
+    Write-Host (" - ONNX SHA256                [HATA] meta.json={0} != dosya={1}" -f $ExpectedOnnxSha, $ActualOnnxSha) -ForegroundColor Red
+    Write-Error "tracera_1024.onnx SHA256 ozeti meta.json (onnx_sha256) ile uyusmuyor! Derleme durduruldu."
+    exit 1
+}
+Write-Host (" - tracera_1024.onnx SHA256   = {0}... [OK]" -f $ActualOnnxSha.Substring(0, 16)) -ForegroundColor Green
+Write-Host " -> Uygulama surumu: v$CanonicalVersion | Model surumu: v$ModelVersion" -ForegroundColor Green
 
 # =============================================================================
-# Arac ve Ortam Kontrolu (node, cargo, rustc, Android SDK/NDK, Java, Python)
+# [3/3] Arac ve Ortam Kontrolu (node, cargo, rustc, Android SDK/NDK, Python)
 # =============================================================================
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Cyan
-Write-Host " [2/2] Arac Zinciri ve Ortam Kontrolu" -ForegroundColor Cyan
+Write-Host " [3/3] Arac Zinciri ve Ortam Kontrolu" -ForegroundColor Cyan
 Write-Host "==================================================================" -ForegroundColor Cyan
 
 if (-not $env:JAVA_HOME -or -not (Test-Path -LiteralPath $env:JAVA_HOME)) {
@@ -207,7 +261,7 @@ if ($env:NDK_HOME -and (Test-Path -LiteralPath $env:NDK_HOME)) {
     Add-ToolCheck "Android NDK" $false "NDK_HOME bulunamadi"
 }
 
-# 5. Python ortamlari
+# 5. Python ortamlari (hem tracera hem tracera-build zorunlu, cunku sidecar her normal kosuda derlenir)
 $PyMain = "C:\Users\Burak\anaconda3\envs\tracera\python.exe"
 if (-not (Test-Path -LiteralPath $PyMain)) {
     $FallbackPy = Get-Command python -ErrorAction SilentlyContinue
@@ -222,15 +276,12 @@ if (Test-Path -LiteralPath $PyMain) {
 
 $PyBuild = "C:\Users\Burak\anaconda3\envs\tracera-build\python.exe"
 $SidecarExe = Join-Path $RepoRoot "dist\tracera-api\tracera-api.exe"
-$SidecarReady = (Test-Path -LiteralPath $PyBuild) -or (Test-Path -LiteralPath $SidecarExe)
-$SidecarDetail = if (Test-Path -LiteralPath $SidecarExe) {
-    "Mevcut sidecar hazir ($SidecarExe)"
-} elseif (Test-Path -LiteralPath $PyBuild) {
-    "tracera-build ortami hazir ($PyBuild)"
+if (Test-Path -LiteralPath $PyBuild) {
+    $PyBuildVer = (& $PyBuild --version 2>&1).ToString().Trim()
+    Add-ToolCheck "Python (tracera-build)" $true "$PyBuildVer ($PyBuild) [her kosuda sidecar derlenir]"
 } else {
-    "tracera-build ortami ve dist/tracera-api/tracera-api.exe bulunamadi"
+    Add-ToolCheck "Python (tracera-build)" $false "C:\Users\Burak\anaconda3\envs\tracera-build\python.exe bulunamadi"
 }
-Add-ToolCheck "Sidecar / tracera-build" $SidecarReady $SidecarDetail
 
 # 6. Android APK Imza Durumu
 $KeystorePropsPath = Join-Path $RepoRoot "desktop\src-tauri\gen\android\keystore.properties"
@@ -253,12 +304,12 @@ if ($MissingTools.Count -gt 0) {
 if ($DryRun) {
     Write-Host ""
     Write-Host "==================================================================" -ForegroundColor Green
-    Write-Host " DRY-RUN BASARILI: Surum (v$CanonicalVersion) ve tum araclar hazir." -ForegroundColor Green
+    Write-Host " DRY-RUN BASARILI: Surum (v$CanonicalVersion, model v$ModelVersion), ONNX SHA256 ve tum araclar hazir." -ForegroundColor Green
     Write-Host " Calistirilacak adimlar (normal kosuda):" -ForegroundColor Green
     Write-Host "   (a) Web birim testleri (vitest) + uretim derlemesi (web/dist)"
     Write-Host "   (b) Statik Web Space paketi (web/scripts/build_web_space.mjs -> web/web_space)"
     Write-Host "   (c) Gradio Space paketi + izole CPU testi (scripts/build_space.py --test -> space)"
-    Write-Host "   (d) Tauri Windows EXE NSIS kurulum paketi (desktop/ -> Tracera_${CanonicalVersion}_x64-setup.exe)"
+    Write-Host "   (d) Sidecar yeniden derleme (api/build_exe.py) + canli /health (v$CanonicalVersion) & /explain (energy_in_box) testi + Tauri NSIS EXE"
     Write-Host "   (e) Tauri Android arm64 APK paketi ($SigningNote)"
     Write-Host "   (f) dist_release/ paketleme (EXE + APK + SHA256SUMS.txt)"
     Write-Host "==================================================================" -ForegroundColor Green
@@ -278,7 +329,9 @@ function Write-BuildLog([string]$OverallStatus, [string]$FailureNote = "") {
         "# Tracera v$CanonicalVersion - Surum Derleme Gunlugu (release_build_log.md)",
         "",
         "- **Tarih / Saat:** $NowStr",
-        "- **Surum (Tek Kaynak):** ``v$CanonicalVersion``",
+        "- **Git Dal / Commit SHA:** ``$BranchName`` / ``$CommitShaShort`` (``$CommitShaFull``)",
+        "- **Uygulama Surumu (Tek Kaynak):** ``v$CanonicalVersion``",
+        "- **Model Surumu ve ONNX SHA256:** ``v$ModelVersion`` / ``$ActualOnnxSha``",
         "- **Genel Durum:** **$OverallStatus** (Toplam sure: ``${TotalSec} s``)",
         "- **Android APK Imza Durumu:** $SigningNote",
         "",
@@ -290,6 +343,8 @@ function Write-BuildLog([string]$OverallStatus, [string]$FailureNote = "") {
     foreach ($Rec in $VersionRecords) {
         $LogLines += "| ``$($Rec.Dosya)`` | ``$($Rec.Alan)`` | ``$($Rec.Deger)`` | OK |"
     }
+    $LogLines += "| ``web/public/models/meta.json`` | ``model_version`` | ``$ModelVersion`` | OK |"
+    $LogLines += "| ``web/public/models/meta.json`` | ``onnx_sha256`` | ``$($ActualOnnxSha.Substring(0, 16))...`` | OK |"
     $LogLines += @(
         "",
         "## 2. Derleme Adimlari (a-f)",
@@ -391,21 +446,92 @@ Invoke-BuildStep -StepCode "(c)" -Title "Gradio Space paketi ve izole testi (``b
     "``space/``: $($Stats.Formatted) ($($Stats.Count) dosya)"
 }
 
-# (d) Tauri EXE (NSIS)
+# (d) Sidecar derleme + canli /health & /explain v1.3 dogrulamasi + Tauri EXE (NSIS)
 $SetupExePath = Join-Path $RepoRoot "desktop\src-tauri\target\release\bundle\nsis\Tracera_${CanonicalVersion}_x64-setup.exe"
-Invoke-BuildStep -StepCode "(d)" -Title "Tauri Windows Masaustu Kurulumu (NSIS EXE)" -Action {
-    if ($RebuildSidecar -or -not (Test-Path -LiteralPath $SidecarExe)) {
-        if (-not (Test-Path -LiteralPath $PyBuild)) {
-            throw "Sidecar derlemesi icin $PyBuild bulunamadi."
+$script:SidecarVerifySummary = ""
+
+Invoke-BuildStep -StepCode "(d)" -Title "Sidecar PyInstaller + canli v1.3 API dogrulamasi + Tauri NSIS EXE" -Action {
+    # 1. Sidecar HER normal kosuda yeniden derlenir
+    Push-Location $RepoRoot
+    try {
+        & $PyBuild api/build_exe.py
+        if ($LASTEXITCODE -ne 0) { throw "api/build_exe.py basarisiz oldu (kod: $LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
+    if (-not (Test-Path -LiteralPath $SidecarExe)) {
+        throw "Sidecar ikilisi uretilemedi: $SidecarExe"
+    }
+
+    # 2. Derlenen tracera-api.exe'yi rastgele bir portta baslatip /health (1.1.0) ve /explain (energy_in_box) dogrula
+    $TestPort = Get-Random -Minimum 49152 -Maximum 65500
+    $ValImgPath = Join-Path $RepoRoot "app\examples\val_05_missing_hole_01.jpg"
+    if (-not (Test-Path -LiteralPath $ValImgPath)) {
+        throw "Dogrulama goruntusu bulunamadi: $ValImgPath"
+    }
+
+    $SidecarProc = Start-Process -FilePath $SidecarExe -ArgumentList @("--port", "$TestPort") -PassThru -WindowStyle Hidden
+    try {
+        $VerifyPy = @"
+import json, sys, time, urllib.request
+port = int(sys.argv[1])
+expected_ver = sys.argv[2]
+img_path = sys.argv[3]
+base = f"http://127.0.0.1:{port}"
+health = None
+for _ in range(90):
+    try:
+        with urllib.request.urlopen(base + "/health", timeout=2.0) as r:
+            if r.status == 200:
+                health = json.loads(r.read().decode("utf-8"))
+                break
+    except Exception:
+        time.sleep(0.5)
+if health is None:
+    raise RuntimeError("tracera-api.exe /health zaman asimina ugradi")
+if str(health.get("version")) != expected_ver:
+    raise RuntimeError(f"/health version uyusmazligi: beklenen={expected_ver}, gelen={health.get('version')}")
+
+boundary = "----TraceraReleaseVerifyBoundary"
+with open(img_path, "rb") as f:
+    img_bytes = f.read()
+parts = []
+for name, val in [("box", "1200,700,1500,1000"), ("cls_id", "0")]:
+    parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{val}\r\n".encode("utf-8"))
+parts.append(
+    f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"val.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".encode("utf-8")
+    + img_bytes
+    + f"\r\n--{boundary}--\r\n".encode("utf-8")
+)
+body = b"".join(parts)
+req = urllib.request.Request(
+    base + "/explain",
+    data=body,
+    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    method="POST",
+)
+with urllib.request.urlopen(req, timeout=30.0) as r:
+    exp = json.loads(r.read().decode("utf-8"))
+if "energy_in_box" not in exp or exp["energy_in_box"] is None:
+    raise RuntimeError("/explain yanitinda energy_in_box alani yok!")
+e_val = float(exp["energy_in_box"])
+if not (0.0 <= e_val <= 1.0):
+    raise RuntimeError(f"energy_in_box [0,1] disinda: {e_val}")
+print(f"health.version={health['version']}, energy_in_box={e_val:.4f}, peak_in_box={exp.get('peak_in_box')}")
+"@
+        $VerifyOut = ($VerifyPy | & $PyMain - $TestPort $CanonicalVersion $ValImgPath 2>&1) -join " "
+        if ($LASTEXITCODE -ne 0) {
+            throw "Sidecar canli API dogrulamasi basarisiz oldu: $VerifyOut"
         }
-        Push-Location $RepoRoot
-        try {
-            & $PyBuild api/build_exe.py
-            if ($LASTEXITCODE -ne 0) { throw "api/build_exe.py basarisiz oldu (kod: $LASTEXITCODE)" }
-        } finally {
-            Pop-Location
+        $script:SidecarVerifySummary = $VerifyOut.Trim()
+        Write-Host "   [Sidecar Dogrulandi] $script:SidecarVerifySummary" -ForegroundColor Green
+    } finally {
+        if ($SidecarProc -and -not $SidecarProc.HasExited) {
+            Stop-Process -Id $SidecarProc.Id -Force -ErrorAction SilentlyContinue
         }
     }
+
+    # 3. Tauri Windows NSIS kurulum paketini derle
     Push-Location (Join-Path $RepoRoot "desktop")
     try {
         & npx tauri build --config src-tauri/tauri.windows.conf.json
@@ -418,7 +544,7 @@ Invoke-BuildStep -StepCode "(d)" -Title "Tauri Windows Masaustu Kurulumu (NSIS E
     }
 } -MeasureArtifact {
     $Item = Get-Item -LiteralPath $SetupExePath
-    "``$($Item.Name)``: $(Format-Size $Item.Length)"
+    "``$($Item.Name)``: $(Format-Size $Item.Length) (`$script:SidecarVerifySummary`)"
 }
 
 # (e) Tauri Android APK (arm64)
