@@ -6,12 +6,18 @@ import { AboutView } from "./components/AboutView";
 import { BatchView, type BatchQueueItem } from "./components/BatchView";
 import { DetectView } from "./components/DetectView";
 import { ExplainView } from "./components/ExplainView";
+import { GuideView } from "./components/GuideView";
 import { HistoryView } from "./components/HistoryView";
 import { HomeView } from "./components/HomeView";
 import { LiveView } from "./components/LiveView";
 import { MobileNav } from "./components/MobileNav";
 import { MoreView } from "./components/MoreView";
+import {
+  ONBOARDING_STORAGE_KEY,
+  OnboardingModal,
+} from "./components/OnboardingModal";
 import { ResultsView } from "./components/ResultsView";
+import { SettingsView } from "./components/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { VAL_EXAMPLES, type ValExampleItem } from "./fixtures";
@@ -79,6 +85,24 @@ export function App() {
   const setOrtProgress = useAppStore((s) => s.setOrtProgress);
   const setOrtModelCached = useAppStore((s) => s.setOrtModelCached);
   const bumpHistoryVersion = useAppStore((s) => s.bumpHistoryVersion);
+
+  const [onboardingOpen, setOnboardingOpen] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("onboarding") === "1") return true;
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.webdriver &&
+        params.get("onboarding") !== "1"
+      ) {
+        return false;
+      }
+      return localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "1";
+    } catch {
+      return false;
+    }
+  });
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -615,9 +639,15 @@ export function App() {
               {activeTab === "history" && (
                 <HistoryView onOpenRecord={handleOpenHistoryRecord} />
               )}
+              {activeTab === "guide" && <GuideView />}
               {activeTab === "results" && <ResultsView />}
               {(activeTab === "about" || activeTab === "developer") && (
                 <AboutView />
+              )}
+              {activeTab === "settings" && (
+                <SettingsView
+                  onReopenOnboarding={() => setOnboardingOpen(true)}
+                />
               )}
               {activeTab === "more" && <MoreView />}
             </motion.div>
@@ -626,6 +656,11 @@ export function App() {
 
         <MobileNav />
       </div>
+
+      <OnboardingModal
+        open={onboardingOpen}
+        onClose={() => setOnboardingOpen(false)}
+      />
     </div>
   );
 }
