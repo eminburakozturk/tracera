@@ -317,8 +317,8 @@ export function ResultsView() {
         <CardHeader>
           <CardTitle>
             {t("results.testTitle", {
-              conf: firstOp ? firstOp.conf_threshold : 0.395,
-              iou: firstOp ? firstOp.iou_threshold : 0.5,
+              conf: fmtNum(firstOp ? firstOp.conf_threshold : 0.395, 3),
+              iou: fmtNum(firstOp ? firstOp.iou_threshold : 0.5, 1),
             })}
           </CardTitle>
           {testMap50 !== null && (

@@ -124,7 +124,7 @@
     "sourceLabel": "Explanation Source",
     "sourceApi": "Local Server (FastAPI)",
     "sourceCloud": "Cloud ({{space}})",
-    "sourceMock": "Sample Data (Mock)",
+    "sourceMock": "Sample data (test)",
     "cloudUnavailable": "Cloud explanation is currently unavailable",
     "howDecidedTitle": "How was this decision made?",
     "howDecidedSub": "Summary generated strictly from model outputs and verified dataset statistics:",
