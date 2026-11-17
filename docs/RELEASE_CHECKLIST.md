@@ -48,7 +48,7 @@ Bu kontrol listesi, yeni bir Tracera sürümü (ör. `v1.1.0`) yayınlanırken d
   - `results/operating_point.csv`: val (`TP=514, FP=16, FN=48, P=0.9698, R=0.9146, F1=0.9414`) ve kilitli test (`TP=416, FP=142, FN=53, P=0.7455, R=0.8870, F1=0.8101`).
   - `web/public/data/reliability_val.json` ve `web/public/data/reliability_test.json`: **Güven aralığına göre kesinlik (val ve test)** tablosundaki satırların ve `0.9–1.0` (`—`) satırının birebir tuttuğunu doğrula.
   - `dist_release/SHA256SUMS.txt`: Yeni `EXE` ve `APK` dosya boyutlarının (`MiB`) ve SHA-256 özetlerinin sürüm notları ve `README.md` ile uyuştuğunu kontrol et.
-- [ ] **README ekran görüntüleri üretim görünümünde olmalı:** `results/ui_v11/` görüntüleri `npm run dev` (Mock rozeti görünür) ile değil, `npm run build && npm run preview` + gerçek motor (WebGPU/ORT) ile yenilenir; görüntülerde "Örnek veri (test)" rozeti olmamalı. README'deki "Uygulama Ekranları (v1.1)" bölümü bu dosyalardan üretilir.
+- [ ] **README ekran görüntüleri:** `claude_run\release_prep.bat` (yerel API + `tests/e2e/readme_shots.spec.ts`) → `results/readme/*.png`; gerçek motorla, "Örnek veri (test)" rozeti olmadan. README "Uygulama Ekranları (v1.1)" bölümü bu klasörden üretilir.
 - [ ] **Claude onayı:** `docs/README_final_draft.md` ve `docs/RELEASE_NOTES_v1.1.0.md` (boyut/SHA alanları doldurulmuş) Claude'a gösterilir.
 - [ ] **Onay sonrası `README.md` dosyasını yaz:**
   ```powershell

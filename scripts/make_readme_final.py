@@ -380,7 +380,7 @@ def _build_baseline_section() -> str:
     return "\n".join(out)
 
 def _ui_v11_section() -> list[str]:
-    """v1.1 arayüz ekranları: yalnız results/ui_v11/ altında gerçekten var olan görüntüler."""
+    """v1.1 arayüz ekranları: yalnız results/readme/ altında gerçekten var olan görüntüler."""
     shots = [
         ("home_desktop_dark.png", "Ana Sayfa"),
         ("detect_desktop_dark.png", "Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi"),
@@ -392,7 +392,7 @@ def _ui_v11_section() -> list[str]:
         ("explain_mobile_light.png", "Açıklama (mobil, açık)"),
         ("guide_mobile_dark.png", "Kusur Rehberi (mobil)"),
     ]
-    ui_dir = REPO_ROOT / "results" / "ui_v11"
+    ui_dir = REPO_ROOT / "results" / "readme"
     present = [(f, c) for f, c in shots if (ui_dir / f).exists()]
     present_m = [(f, c) for f, c in mobile if (ui_dir / f).exists()]
     if not present and not present_m:
@@ -404,12 +404,12 @@ def _ui_v11_section() -> list[str]:
         "",
     ]
     for f, c in present:
-        out += [f"**{c}**", "", f"![{c}](results/ui_v11/{f})", ""]
+        out += [f"**{c}**", "", f"![{c}](results/readme/{f})", ""]
     if present_m:
         out += [
             "| " + " | ".join(c for _, c in present_m) + " |",
             "|" + "---|" * len(present_m),
-            "| " + " | ".join(f'<img src="results/ui_v11/{f}" width="240" alt="{c}">' for f, c in present_m) + " |",
+            "| " + " | ".join(f'<img src="results/readme/{f}" width="240" alt="{c}">' for f, c in present_m) + " |",
             "",
         ]
     out += [
