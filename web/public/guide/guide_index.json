@@ -1,0 +1,590 @@
+{
+  "split": "val",
+  "allowed_cards": [
+    "05",
+    "11"
+  ],
+  "crop_size": 320,
+  "context_factor": 4.0,
+  "crops_per_class": 3,
+  "total_crops": 18,
+  "dataset_note": "Bu veri setinde kusurlar, kusursuz kart fotoğraflarına sentetik olarak eklenmiştir (PKU-Market-PCB). Gerçek üretim hattı görüntülerinde performans farklı olabilir.",
+  "items": [
+    {
+      "id": "missing_hole_1",
+      "class": "missing_hole",
+      "cls_id": 0,
+      "variant": 1,
+      "filename": "missing_hole_1.jpg",
+      "path": "/guide/missing_hole_1.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_missing_hole_07.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        2028.0,
+        187.0,
+        2103.0,
+        259.0
+      ],
+      "crop_box_orig": [
+        1915,
+        73,
+        2215,
+        373
+      ],
+      "box_in_crop": [
+        120.5,
+        121.6,
+        200.5,
+        198.4
+      ],
+      "size_bytes": 17323
+    },
+    {
+      "id": "missing_hole_2",
+      "class": "missing_hole",
+      "cls_id": 0,
+      "variant": 2,
+      "filename": "missing_hole_2.jpg",
+      "path": "/guide/missing_hole_2.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_missing_hole_10.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        950.0,
+        737.0,
+        1047.0,
+        835.0
+      ],
+      "crop_box_orig": [
+        803,
+        590,
+        1195,
+        982
+      ],
+      "box_in_crop": [
+        120.0,
+        120.0,
+        199.2,
+        200.0
+      ],
+      "size_bytes": 20671
+    },
+    {
+      "id": "missing_hole_3",
+      "class": "missing_hole",
+      "cls_id": 0,
+      "variant": 3,
+      "filename": "missing_hole_3.jpg",
+      "path": "/guide/missing_hole_3.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_missing_hole_05.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        2022.0,
+        1806.0,
+        2122.0,
+        1899.0
+      ],
+      "crop_box_orig": [
+        1872,
+        1653,
+        2272,
+        2053
+      ],
+      "box_in_crop": [
+        120.0,
+        122.4,
+        200.0,
+        196.8
+      ],
+      "size_bytes": 15216
+    },
+    {
+      "id": "mouse_bite_1",
+      "class": "mouse_bite",
+      "cls_id": 1,
+      "variant": 1,
+      "filename": "mouse_bite_1.jpg",
+      "path": "/guide/mouse_bite_1.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_mouse_bite_03.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        978.0,
+        1095.0,
+        1045.0,
+        1160.0
+      ],
+      "crop_box_orig": [
+        878,
+        994,
+        1146,
+        1262
+      ],
+      "box_in_crop": [
+        119.4,
+        120.6,
+        199.4,
+        198.2
+      ],
+      "size_bytes": 18340
+    },
+    {
+      "id": "mouse_bite_2",
+      "class": "mouse_bite",
+      "cls_id": 1,
+      "variant": 2,
+      "filename": "mouse_bite_2.jpg",
+      "path": "/guide/mouse_bite_2.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_mouse_bite_07.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        504.0,
+        203.0,
+        594.0,
+        294.0
+      ],
+      "crop_box_orig": [
+        367,
+        67,
+        731,
+        431
+      ],
+      "box_in_crop": [
+        120.4,
+        119.6,
+        199.6,
+        199.6
+      ],
+      "size_bytes": 14899
+    },
+    {
+      "id": "mouse_bite_3",
+      "class": "mouse_bite",
+      "cls_id": 1,
+      "variant": 3,
+      "filename": "mouse_bite_3.jpg",
+      "path": "/guide/mouse_bite_3.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_mouse_bite_03.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        304.0,
+        524.0,
+        391.0,
+        627.0
+      ],
+      "crop_box_orig": [
+        141,
+        369,
+        553,
+        781
+      ],
+      "box_in_crop": [
+        126.6,
+        120.4,
+        194.2,
+        200.4
+      ],
+      "size_bytes": 15552
+    },
+    {
+      "id": "open_circuit_1",
+      "class": "open_circuit",
+      "cls_id": 2,
+      "variant": 1,
+      "filename": "open_circuit_1.jpg",
+      "path": "/guide/open_circuit_1.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_open_circuit_06.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        2083.0,
+        993.0,
+        2180.0,
+        1085.0
+      ],
+      "crop_box_orig": [
+        1938,
+        845,
+        2326,
+        1233
+      ],
+      "box_in_crop": [
+        119.6,
+        122.1,
+        199.6,
+        197.9
+      ],
+      "size_bytes": 18986
+    },
+    {
+      "id": "open_circuit_2",
+      "class": "open_circuit",
+      "cls_id": 2,
+      "variant": 2,
+      "filename": "open_circuit_2.jpg",
+      "path": "/guide/open_circuit_2.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_open_circuit_02.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1529.0,
+        763.0,
+        1604.0,
+        837.0
+      ],
+      "crop_box_orig": [
+        1416,
+        650,
+        1716,
+        950
+      ],
+      "box_in_crop": [
+        120.5,
+        120.5,
+        200.5,
+        199.5
+      ],
+      "size_bytes": 18386
+    },
+    {
+      "id": "open_circuit_3",
+      "class": "open_circuit",
+      "cls_id": 2,
+      "variant": 3,
+      "filename": "open_circuit_3.jpg",
+      "path": "/guide/open_circuit_3.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_open_circuit_05.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1509.0,
+        970.0,
+        1573.0,
+        1053.0
+      ],
+      "crop_box_orig": [
+        1375,
+        845,
+        1707,
+        1177
+      ],
+      "box_in_crop": [
+        129.2,
+        120.5,
+        190.8,
+        200.5
+      ],
+      "size_bytes": 16744
+    },
+    {
+      "id": "short_1",
+      "class": "short",
+      "cls_id": 3,
+      "variant": 1,
+      "filename": "short_1.jpg",
+      "path": "/guide/short_1.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_short_08.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1706.0,
+        542.0,
+        1822.0,
+        637.0
+      ],
+      "crop_box_orig": [
+        1532,
+        358,
+        1996,
+        822
+      ],
+      "box_in_crop": [
+        120.0,
+        126.9,
+        200.0,
+        192.4
+      ],
+      "size_bytes": 20905
+    },
+    {
+      "id": "short_2",
+      "class": "short",
+      "cls_id": 3,
+      "variant": 2,
+      "filename": "short_2.jpg",
+      "path": "/guide/short_2.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_short_10.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        540.0,
+        1934.0,
+        655.0,
+        2053.0
+      ],
+      "crop_box_orig": [
+        360,
+        1755,
+        836,
+        2231
+      ],
+      "box_in_crop": [
+        121.0,
+        120.3,
+        198.3,
+        200.3
+      ],
+      "size_bytes": 17402
+    },
+    {
+      "id": "short_3",
+      "class": "short",
+      "cls_id": 3,
+      "variant": 3,
+      "filename": "short_3.jpg",
+      "path": "/guide/short_3.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_short_02.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        430.0,
+        1401.0,
+        573.0,
+        1501.0
+      ],
+      "crop_box_orig": [
+        216,
+        1165,
+        788,
+        1737
+      ],
+      "box_in_crop": [
+        119.7,
+        132.0,
+        199.7,
+        188.0
+      ],
+      "size_bytes": 21631
+    },
+    {
+      "id": "spur_1",
+      "class": "spur",
+      "cls_id": 4,
+      "variant": 1,
+      "filename": "spur_1.jpg",
+      "path": "/guide/spur_1.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_spur_04.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1564.0,
+        1092.0,
+        1655.0,
+        1178.0
+      ],
+      "crop_box_orig": [
+        1428,
+        953,
+        1792,
+        1317
+      ],
+      "box_in_crop": [
+        119.6,
+        122.2,
+        199.6,
+        197.8
+      ],
+      "size_bytes": 24529
+    },
+    {
+      "id": "spur_2",
+      "class": "spur",
+      "cls_id": 4,
+      "variant": 2,
+      "filename": "spur_2.jpg",
+      "path": "/guide/spur_2.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_spur_08.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        452.0,
+        235.0,
+        576.0,
+        345.0
+      ],
+      "crop_box_orig": [
+        266,
+        42,
+        762,
+        538
+      ],
+      "box_in_crop": [
+        120.0,
+        124.5,
+        200.0,
+        195.5
+      ],
+      "size_bytes": 17958
+    },
+    {
+      "id": "spur_3",
+      "class": "spur",
+      "cls_id": 4,
+      "variant": 3,
+      "filename": "spur_3.jpg",
+      "path": "/guide/spur_3.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_spur_09.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        289.0,
+        929.0,
+        391.0,
+        1083.0
+      ],
+      "crop_box_orig": [
+        32,
+        698,
+        648,
+        1314
+      ],
+      "box_in_crop": [
+        133.5,
+        120.0,
+        186.5,
+        200.0
+      ],
+      "size_bytes": 19281
+    },
+    {
+      "id": "spurious_copper_1",
+      "class": "spurious_copper",
+      "cls_id": 5,
+      "variant": 1,
+      "filename": "spurious_copper_1.jpg",
+      "path": "/guide/spurious_copper_1.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_spurious_copper_10.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1530.0,
+        1078.0,
+        1653.0,
+        1201.0
+      ],
+      "crop_box_orig": [
+        1346,
+        894,
+        1838,
+        1386
+      ],
+      "box_in_crop": [
+        119.7,
+        119.7,
+        199.7,
+        199.7
+      ],
+      "size_bytes": 25387
+    },
+    {
+      "id": "spurious_copper_2",
+      "class": "spurious_copper",
+      "cls_id": 5,
+      "variant": 2,
+      "filename": "spurious_copper_2.jpg",
+      "path": "/guide/spurious_copper_2.jpg",
+      "split": "val",
+      "kart_no": "11",
+      "source_image": "11_spurious_copper_07.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1453.0,
+        540.0,
+        1547.0,
+        629.0
+      ],
+      "crop_box_orig": [
+        1312,
+        396,
+        1688,
+        772
+      ],
+      "box_in_crop": [
+        120.0,
+        122.6,
+        200.0,
+        198.3
+      ],
+      "size_bytes": 18715
+    },
+    {
+      "id": "spurious_copper_3",
+      "class": "spurious_copper",
+      "cls_id": 5,
+      "variant": 3,
+      "filename": "spurious_copper_3.jpg",
+      "path": "/guide/spurious_copper_3.jpg",
+      "split": "val",
+      "kart_no": "05",
+      "source_image": "05_spurious_copper_04.jpg",
+      "crop_size": 320,
+      "context_factor": 4.0,
+      "gt_box_orig": [
+        1544.0,
+        1099.0,
+        1649.0,
+        1204.0
+      ],
+      "crop_box_orig": [
+        1386,
+        941,
+        1806,
+        1361
+      ],
+      "box_in_crop": [
+        120.4,
+        120.4,
+        200.4,
+        200.4
+      ],
+      "size_bytes": 24923
+    }
+  ]
+}

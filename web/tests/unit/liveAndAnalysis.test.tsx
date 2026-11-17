@@ -52,14 +52,14 @@ describe("LiveView, Error Analysis Gallery & Device Benchmark", () => {
     expect(screen.getByTestId("fp-total-val")).toHaveTextContent("16");
 
     const mbSpot = screen.getByTestId("template-spot-mouse_bite");
-    expect(mbSpot).toHaveTextContent("Evet (0.5569)");
-    expect(mbSpot).toHaveTextContent("0.4406–0.6331");
+    expect(mbSpot).toHaveTextContent("Evet (0,5569)");
+    expect(mbSpot).toHaveTextContent("0,4406–0,6331");
 
     const spurSpot = screen.getByTestId("template-spot-spur");
-    expect(spurSpot).toHaveTextContent("Hayır (<0.395)");
+    expect(spurSpot).toHaveTextContent("Hayır (<0,395)");
 
     const quantTable = screen.getByTestId("quant-parity-table");
-    expect(quantTable).toHaveTextContent("0.395");
+    expect(quantTable).toHaveTextContent("0,395");
     expect(quantTable).toHaveTextContent("43");
 
     expect(screen.getByTestId("device-bench-btn")).toHaveTextContent(

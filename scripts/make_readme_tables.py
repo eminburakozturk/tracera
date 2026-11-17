@@ -7,12 +7,14 @@ README.md dosyasındaki tüm sayısal değerler bu dosyadaki tablolardan doğrud
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = REPO_ROOT / "results"
+WEB_DATA_DIR = REPO_ROOT / "web" / "public" / "data"
 OUTPUT_FILE = RESULTS_DIR / "readme_tables.md"
 
 
@@ -228,6 +230,71 @@ def build_template_check_table() -> str:
     return "\n".join(lines)
 
 
+def build_reliability_table() -> str:
+    """Tablo 5b: Güven aralığına göre kesinlik (val ve test)."""
+    val_path = WEB_DATA_DIR / "reliability_val.json"
+    test_path = WEB_DATA_DIR / "reliability_test.json"
+    if not val_path.is_file() or not test_path.is_file():
+        return "*reliability_val.json veya reliability_test.json bulunamadı.*"
+
+    val_data = json.loads(val_path.read_text(encoding="utf-8"))
+    test_data = json.loads(test_path.read_text(encoding="utf-8"))
+    val_bins = {b["bin"]: b for b in val_data["bins"]}
+    test_bins = {b["bin"]: b for b in test_data["bins"]}
+
+    def _fmt_prec(n_val: int, prec: float | None) -> str:
+        if n_val == 0 or prec is None:
+            return "—"
+        return f"{prec:.4f} (%{prec * 100:.1f})"
+
+    lines = [
+        "### Güven aralığına göre kesinlik (val ve test)",
+        "",
+        "| aralık | val n | val kesinlik | test n | test TP | test FP | test kesinlik |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for r_key in [b["bin"] for b in val_data["bins"]]:
+        vb = val_bins[r_key]
+        tb = test_bins[r_key]
+        label = r_key.replace("-", "–")
+        vn = int(vb["n"])
+        tn = int(tb["n"])
+        if vn == 0 and tn == 0:
+            lines.append(f"| {label} | 0 | — | 0 | — | — | — |")
+        else:
+            v_prec_str = _fmt_prec(vn, vb["precision"])
+            t_prec_str = _fmt_prec(tn, tb["precision"])
+            t_tp_str = "—" if tn == 0 else str(int(tb["TP"]))
+            t_fp_str = "—" if tn == 0 else str(int(tb["FP"]))
+            lines.append(
+                f"| {label} | {vn} | {v_prec_str} | {tn} | {t_tp_str} | {t_fp_str} | {t_prec_str} |"
+            )
+
+    v_tot_n = int(val_data["total_detections"])
+    v_tot_p = float(val_data["overall_precision"])
+    t_tot_n = int(test_data["total_detections"])
+    t_tot_tp = int(test_data["total_TP"])
+    t_tot_fp = int(test_data["total_FP"])
+    t_tot_p = float(test_data["overall_precision"])
+    lines.append(
+        f"| **Toplam (≥ 0.395)** | **{v_tot_n}** | **{_fmt_prec(v_tot_n, v_tot_p)}** | "
+        f"**{t_tot_n}** | **{t_tot_tp}** | **{t_tot_fp}** | **{_fmt_prec(t_tot_n, t_tot_p)}** |"
+    )
+
+    lines.extend([
+        "",
+        "Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; "
+        "test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. "
+        "Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) "
+        "Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için "
+        "genel bir kalibrasyon iddiası yapılmaz (arayüzde güveni `0.6`'nın altındaki tespitlere eklenen *\"Düşük güven: gözden geçirin\"* "
+        "etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def build_xai_tables() -> str:
     """Tablo 6a & 6b: XAI Açıklanabilirlik Doğrulama Sonuçları (g_y11s_1024_full)."""
     csv_path = RESULTS_DIR / "gradcam_sanity.csv"
@@ -323,6 +390,48 @@ def build_edge_benchmark_table() -> str:
     return "\n".join(lines)
 
 
+def build_platform_drift_table() -> str:
+    """Tablo 7b: Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)."""
+    csv_path = RESULTS_DIR / "ci2_linux_parity.csv"
+    if not csv_path.is_file():
+        return "*ci2_linux_parity.csv bulunamadı.*"
+
+    df = pd.read_csv(csv_path)
+    summary_row = df[df["image"] == "SUMMARY"].iloc[0]
+    single_row = df[df["image"] == "05_missing_hole_01.jpg"].iloc[0]
+    tested_cnt = int((df["status"] == "ok").sum())
+    total_cnt = int(len(df[df["image"] != "SUMMARY"]))
+
+    sum_mean_dconf = float(summary_row["mean_abs_dconf"])
+    sum_max_dconf = float(summary_row["max_abs_dconf"])
+    sum_mean_iou = float(summary_row["mean_iou"])
+    sum_ref_0395 = int(summary_row["ref_count_0395"])
+    sum_lin_0395 = int(summary_row["linux_count_0395"])
+    sum_diff_0395 = int(summary_row["count_diff_0395"])
+
+    s_ref_0395 = int(single_row["ref_count_0395"])
+    s_lin_0395 = int(single_row["linux_count_0395"])
+    s_diff_0395 = int(single_row["count_diff_0395"])
+    s_mean_iou = float(single_row["mean_iou"])
+    s_mean_dconf = float(single_row["mean_abs_dconf"])
+    s_max_dconf = float(single_row["max_abs_dconf"])
+
+    lines = [
+        "### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)",
+        "",
+        "GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
+        "",
+        "| Kapsam | Ort. \\|Δconf\\| | Maks. \\|Δconf\\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |",
+        "|---|---:|---:|---:|---:|---|",
+        f"| GitHub runner (`{tested_cnt}/{total_cnt}` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **{sum_mean_dconf:.3f}** | **{sum_max_dconf:.3f}** | **{sum_mean_iou:.3f}** | **{sum_ref_0395} → {sum_lin_0395} ({sum_diff_0395:+d})** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
+        f"| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **{s_mean_iou:.3f}** | **{s_ref_0395} → {s_lin_0395} ({s_diff_0395})** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `{s_mean_dconf:.4f}` / `{s_max_dconf:.4f}`) |",
+        "",
+        "> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def build_aoi_transfer_table() -> str:
     """Tablo 8: PCB-AoI Transfer Öğrenme Deneyi (Null Sonuç)."""
     csv_path = RESULTS_DIR / "aoi_transfer.csv"
@@ -389,8 +498,10 @@ def main() -> None:
         build_final_test_table(),
         build_operating_point_table(),
         build_template_check_table(),
+        build_reliability_table(),
         build_xai_tables(),
         build_edge_benchmark_table(),
+        build_platform_drift_table(),
         build_aoi_transfer_table(),
     ]
 

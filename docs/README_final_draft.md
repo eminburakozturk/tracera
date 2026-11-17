@@ -31,7 +31,7 @@ Model seçiminde ve değerlendirmede aşırı iyimser tekil split yanılgısın�
 
 > **Metodolojik Not:** Test kartları (06 ve 10), 1024 kart bazlı CV'de en yüksek skoru alan Kat 5'in doğrulama kartları arasındaydı (0.9569 mAP50). Bu yüzden tek seferlik test skoru (0.9225) iyimser uçtadır; projenin ana iddiası **0.858 ± 0.152** CV ortalamasıdır. Ultralytics'in test için otomatik raporladığı P 0.9462 / R 0.8577, eşiği test setinin kendi F1 eğrisinden (0.569) seçtiği için bir üst sınırdır ("oracle eşik") ve başarı olarak raporlanmaz.
 
-> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.
+> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). GitHub runner (CI #2, `results/ci2_linux_parity.csv`) üzerinde 9/10 val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = 0.020`, maks. `0.136`, ort. `IoU = 0.982`, `0.395`'te tespit `42 → 45` (`+3`); tek görüntü `pytest` testinde maks. güven farkı `|Δ| = 0.0034` (`0.827784` vs `0.831160`) ölçüldü. Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
 
 ---
 
@@ -109,6 +109,54 @@ Kart 10 ve 11 şablonlarında hiç yanlış alarm yoktur (4 temiz şablonda topl
 - **spur noktası:** Konum sabittir, ancak temiz şablonda güven yalnızca 0.09'dur; kusurlu görüntülerde neden 0.40–0.46'ya çıktığı açıklanamamıştır (Bölüm 9).
 
 **Duyarlılık satırı:** Bu 2 nokta çıkarıldığında test Precision'ı **0.9369**, F1 **0.9113** olur. Bu satır sonradan yapılmış bir analizdir; kilitli sonuç P 0.7455 / F1 0.8101'dir.
+
+### Güven aralığına göre kesinlik (val ve test)
+
+| aralık | val n | val kesinlik | test n | test TP | test FP | test kesinlik |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.395–0.5 | 4 | 1.0000 (%100.0) | 78 | 10 | 68 | 0.1282 (%12.8) |
+| 0.5–0.6 | 13 | 0.8462 (%84.6) | 68 | 10 | 58 | 0.1471 (%14.7) |
+| 0.6–0.7 | 20 | 0.9000 (%90.0) | 41 | 32 | 9 | 0.7805 (%78.0) |
+| 0.7–0.8 | 253 | 0.9763 (%97.6) | 211 | 206 | 5 | 0.9763 (%97.6) |
+| 0.8–0.9 | 240 | 0.9750 (%97.5) | 160 | 158 | 2 | 0.9875 (%98.8) |
+| 0.9–1.0 | 0 | — | 0 | — | — | — |
+| **Toplam (≥ 0.395)** | **530** | **0.9698 (%97.0)** | **558** | **416** | **142** | **0.7455 (%74.6)** |
+
+Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için genel bir kalibrasyon iddiası yapılmaz (arayüzde güveni `0.6`'nın altındaki tespitlere eklenen *"Düşük güven: gözden geçirin"* etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).
+### Değerlendirme ve Uygulama Ön İşlemesi Farkı
+
+Raporlanan çalışma noktası Ultralytics `DetectionValidator` ile `rect=True` (en az dolgu) ölçüldü; web, EXE ve Gradio ise görüntüyü `1024×1024` kareye dolguyla yerleştirir. Uygulamanın ön işlemesi ONNX FP32 ile yeniden üretildi (PyTorch referansıyla 62/62 kutu eşleşmesi) ve aynı eşikle (`0.395`, sınıflı, IoU ≥ 0.5) ölçüldü:
+
+| Küme | Ön işleme | TP | FP | FN | P | R | F1 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| val | `rect=True` (raporlanan) | 514 | 16 | 48 | 0.9698 | 0.9146 | 0.9414 |
+| val | kare letterbox (uygulama) | 515 | 54 | 47 | 0.9051 | 0.9164 | 0.9107 |
+| test | `rect=True` (raporlanan) | 416 | 142 | 53 | 0.7455 | 0.8870 | 0.8101 |
+| test | kare letterbox (uygulama) | 416 | 139 | 53 | 0.7495 | 0.8870 | 0.8125 |
+
+Test etkilenmiyor; val'deki fark neredeyse tamamen **Kart 05'teki tek sabit `spurious_copper` şablon noktasından** geliyor (güven `0.400–0.408`, `rect` ölçümünde eşiğin altında). FP32–INT8 farkı, Linux CI'daki `+3` tespit ve bu ön işleme farkı aynı noktada görünüyor: eşiğe yapışık bir şablon özelliği, küçük sayısal değişikliklerle eşiği geçip geçmiyor. Eşik ve raporlanan metrikler değiştirilmedi (test görüldükten sonra yeniden seçim yapılmaz); arayüzdeki val PR eğrisi ve güvenilirlik verisi `rect=True` ölçümündendir.
+
+### Klasik Şablon Farkı Karşılaştırması
+
+PKU-Market-PCB'de kusurlu görüntüler `PCB_USED/` şablon fotoğrafıyla **piksel hizalıdır** (faz korelasyonu kayması ~0.001 px): kusurlar şablonun üzerine eklenmiştir. Bunun ne kadar kolaylaştırdığını ölçmek için referanslı klasik bir yöntem denendi: gri ton fark → Gauss → eşik → genişletme → bağlı bileşenler (sınıf vermez). Parametreler **yalnız train kartlarında** seçildi (bulanıklık 3, eşik 8, genişletme 31, en az alan 1000; train F1 0.881); val ve test birer kez değerlendirildi. Kıyas sınıfsızdır (yalnız yer); YOLO uygulamanın ön işlemesiyle, eşik `0.395`.
+
+| Küme | Yöntem | F1 (IoU ≥ 0.5) | P | R | F1 (IoU ≥ 0.1) |
+|---|---|---:|---:|---:|---:|
+| val | Klasik şablon farkı | 0.913 | 0.905 | 0.920 | 0.992 |
+| val | YOLO11s | 0.911 | 0.905 | 0.916 | 0.921 |
+| test | Klasik şablon farkı | 0.896 | 0.889 | 0.904 | 0.970 |
+| test | YOLO11s | 0.820 | 0.757 | 0.895 | 0.826 |
+
+Kart bazında (F1, IoU ≥ 0.5):
+
+| Kart | Şablon noktası | Klasik şablon farkı | YOLO11s |
+|---|---|---:|---:|
+| 05 (val) | var | 0.932 | 0.873 |
+| 06 (test) | var (114 FP) | 0.926 | 0.779 |
+| 11 (val) | yok | 0.896 | 0.946 |
+| 10 (test) | yok | 0.840 | 0.918 |
+
+**Yorum:** Hizalı bir referans varken basit fark alma bu veri setinde yer tespitinde YOLO ile başa baş ya da üstün. Bu, PKU'daki başarının gerçek üretim hattını (hizalama, ışık farkı, referans yokluğu) temsil etmediğinin doğrudan kanıtıdır. YOLO'nun geride kaldığı kartlar tam olarak şablon noktası olan kartlardır; şablon noktası olmayan kartlarda YOLO öndedir. YOLO'nun değeri referans görüntü gerektirmemesi ve kusur sınıfı vermesidir. Kaynak: `scripts/baseline_template_diff.py`, `results/baseline/`.
 
 ---
 
@@ -189,6 +237,32 @@ flowchart LR
 - **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `Tracera_1.0.0_x64-setup.exe`, `315.03 MiB`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).
 - **Android APK (Tauri 2 WebView — `Tracera_1.0.0_android_arm64.apk`, `58.29 MiB` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = "android"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.
 
+### Uygulama Ekranları (v1.1)
+
+Aynı arayüz web, Windows ve Android'de çalışır; koyu/açık tema, Türkçe/İngilizce. Ekranlar: Ana Sayfa, Muayene, Açıklama, Toplu Muayene, Geçmiş (cihazda), Kusur Rehberi, Sonuçlar, Geliştirici, Ayarlar. Muayene raporu PDF olarak cihazda üretilir ve standart uygunluk belgesi değildir.
+
+**Ana Sayfa**
+
+![Ana Sayfa](results/readme/home_desktop_dark.png)
+
+**Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi**
+
+![Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi](results/readme/detect_desktop_dark.png)
+
+**Açıklama: LayerCAM ve "Bu karar nasıl verildi?"**
+
+![Açıklama: LayerCAM ve "Bu karar nasıl verildi?"](results/readme/explain_desktop_dark.png)
+
+**Sonuçlar (açık tema)**
+
+![Sonuçlar (açık tema)](results/readme/results_desktop_light.png)
+
+| Muayene (mobil) | Açıklama (mobil, açık) | Kusur Rehberi (mobil) |
+|---|---|---|
+| <img src="results/readme/detect_mobile_dark.png" width="240" alt="Muayene (mobil)"> | <img src="results/readme/explain_mobile_light.png" width="240" alt="Açıklama (mobil, açık)"> | <img src="results/readme/guide_mobile_dark.png" width="240" alt="Kusur Rehberi (mobil)"> |
+
+Güveni `0.6`'nın altındaki tespitler arayüzde *"Düşük güven: gözden geçirin"* etiketi alır (Bölüm 4'teki güven aralığı tablosuna dayanan, test sonrası eklenmiş kullanılabilirlik özelliği).
+
 ### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)
 
 10 val görüntüsü üzerinde (`results/web_parity.csv`, `conf = 0.25` iki yönlü IoU ≥ 0.5 eşleşmesi ve `conf = 0.395` sayım kıyası):
@@ -244,9 +318,20 @@ Tarayıcı (`FP32 ONNX`) ile yerel masaüstü yan sunucusu (`OpenVINO INT8`) sı
 
 `conf ≥ 0.395` noktasındaki tüm FP32–INT8 farkları rastgele dağılmamıştır; Kart 05 şablonunda temiz kartta da yanlış alarm üreten 2 sabit `spurious_copper` arka plan konumunda (`conf=0.5108` @ (1606.5, 1072.9) ve `conf=0.4475` @ (1537.1, 1183.2)) yoğunlaşmıştır.
 
+### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)
+
+GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):
+
+| Kapsam | Ort. \|Δconf\| | Maks. \|Δconf\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |
+|---|---:|---:|---:|---:|---|
+| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |
+| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **0.993** | **4 → 4 (0)** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `0.0087` / `0.0304`) |
+
+> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
+
 ### Çevrimdışı Kullanım, PWA ve İlk İndirme Boyutu
 
-- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**1.10 MB**). Model açılışta kendiliğinden indirilmez.
+- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**2.83 MB**). Model açılışta kendiliğinden indirilmez.
 - **İlk tespitte çalışma zamanı indirmesi:** FP32 ONNX (**36.43 MB**) + WebGPU/tek iş parçacıklı WASM JSEP çalışma zamanı (**28.15 MB**) olmak üzere yaklaşık **~65 MB** CacheFirst stratejisiyle indirilir ve önbelleğe alınır. Kullanılmayan `tracera_1024_int8.onnx` üretim paketine (`dist/` ve `web_space/`) dahil edilmez.
 - **Çevrimdışı devam:** İlk tespit sonrasında internet kesilse bile tarayıcı içi tespit ("Cihazda") çevrimdışı çalışmaya devam eder.
 

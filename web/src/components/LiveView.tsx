@@ -27,6 +27,7 @@ import {
   CardTitle,
 } from "./ui/card";
 import { Slider } from "./ui/slider";
+import { fmtNum, fmtMs } from "../lib/format";
 
 type LiveSourceKind = "sample" | "file" | "camera";
 
@@ -70,7 +71,7 @@ function drawDetectionsOverlay(
     ctx.lineWidth = lineWidth;
     ctx.strokeRect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
 
-    const label = `${det.cls} ${det.conf.toFixed(2)}`;
+    const label = `${det.cls} ${fmtNum(det.conf, 2)}`;
     const padX = Math.round(5 * scale);
     const padY = Math.round(2 * scale);
     const metrics = ctx.measureText(label);
@@ -589,7 +590,7 @@ export function LiveView() {
                   className="font-mono font-semibold tabular-nums text-[var(--text-primary)]"
                   data-testid="live-conf-value"
                 >
-                  {confThreshold.toFixed(3)}
+                  {fmtNum(confThreshold, 3)}
                 </span>
               </div>
               <Slider
@@ -612,7 +613,7 @@ export function LiveView() {
                   className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]"
                   data-testid="live-fps"
                 >
-                  {fps > 0 ? fps.toFixed(2) : "—"}
+                  {fps > 0 ? fmtNum(fps, 2) : "—"}
                 </p>
               </div>
               <div className="elevated-card rounded-lg p-3">
@@ -623,7 +624,7 @@ export function LiveView() {
                   className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]"
                   data-testid="live-model-ms"
                 >
-                  {modelMs > 0 ? `${modelMs.toFixed(1)} ms` : "—"}
+                  {modelMs > 0 ? `${fmtMs(modelMs, 1)}` : "—"}
                 </p>
               </div>
               <div className="elevated-card rounded-lg p-3">

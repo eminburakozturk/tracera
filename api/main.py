@@ -46,11 +46,12 @@ from tracera_core import (  # noqa: E402
     RESULTS_DIR,
     build_metrics_payload,
     detect_openvino,
-    explain_layercam,
+    explain_layercam_with_metrics,
     load_meta,
 )
 
 MAX_IMAGE_BYTES = 25 * 1024 * 1024  # CONTRACT §3: 25 MB
+APP_VERSION = "1.1.0"
 
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
@@ -70,7 +71,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Tracera Local API",
-    version=str(load_meta().get("version", "1")),
+    version=str(load_meta().get("version", APP_VERSION)),
     lifespan=lifespan,
 )
 
@@ -163,7 +164,7 @@ def get_health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         model=str(meta.get("model", "yolo11s")),
-        version=str(meta.get("version", "1")),
+        version=str(meta.get("version", APP_VERSION)),
         device="cpu",
         backends=MODELS.available_backends(),
     )
@@ -204,7 +205,7 @@ async def post_explain(
     meta = load_meta()
     imgsz = int(meta.get("imgsz", IMGSZ))
 
-    overlay_rgb, zoom_crop_rgb, timing = explain_layercam(
+    overlay_rgb, zoom_crop_rgb, timing, cam_metrics = explain_layercam_with_metrics(
         img_bgr=img_bgr,
         box_orig=box_orig,
         cls_id=cls_id,
@@ -217,6 +218,9 @@ async def post_explain(
         method="layercam",
         layer=4,
         timing=timing,
+        energy_in_box=float(cam_metrics["energy_in_box"]),
+        peak_in_box=bool(cam_metrics["peak_in_box"]),
+        peak_xy=list(cam_metrics["peak_xy"]),
     )
 
 

@@ -84,7 +84,13 @@ test("Ek Adım 3 — OrtDetector two-way parity against PyTorch c025 refs (IoU>=
 
   const repoRoot = path.resolve(process.cwd(), "..");
   const refDir = path.join(repoRoot, "web_spike/ref");
-  const outCsvPath = path.join(repoRoot, "results/web_parity.csv");
+  // Resmi sonuç dosyasına yalnız TRACERA_WRITE_RESULTS=1 iken yazılır (ölçüm koşulları kontrollü olmalı);
+  // aksi halde test-results/ altına (yük altındaki test koşuları README sayılarını değiştirmesin).
+  const outCsvPath =
+    process.env.TRACERA_WRITE_RESULTS === "1"
+      ? path.join(repoRoot, "results/web_parity.csv")
+      : path.join(repoRoot, "web/test-results/web_parity.csv");
+  fs.mkdirSync(path.dirname(outCsvPath), { recursive: true });
 
   const refFiles = fs
     .readdirSync(refDir)

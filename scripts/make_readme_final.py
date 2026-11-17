@@ -209,6 +209,18 @@ def _collect_data() -> dict[str, Any]:
     if not phone_rows:
         raise ValueError("results/device_bench_phone.csv bos")
 
+    rel_val_json = json.loads(
+        (WEB_DIR / "public" / "data" / "reliability_val.json").read_text(encoding="utf-8")
+    )
+    rel_test_json = json.loads(
+        (WEB_DIR / "public" / "data" / "reliability_test.json").read_text(encoding="utf-8")
+    )
+    ci2_rows = _read_csv(RESULTS_DIR / "ci2_linux_parity.csv")
+    ci2_summary = next(r for r in ci2_rows if r["image"] == "SUMMARY")
+    ci2_single = next(r for r in ci2_rows if r["image"] == "05_missing_hole_01.jpg")
+    ci2_tested = sum(1 for r in ci2_rows if r["status"] == "ok")
+    ci2_total = sum(1 for r in ci2_rows if r["image"] != "SUMMARY")
+
     return {
         "parity_images": parity_images,
         "parity_summary": parity_summary,
@@ -232,8 +244,179 @@ def _collect_data() -> dict[str, Any]:
         "desk": _extract_desktop_metrics(),
         "rel": _extract_release_artifacts(),
         "phone": phone_rows[0],
+        "rel_val": rel_val_json,
+        "rel_test": rel_test_json,
+        "ci2_summary": ci2_summary,
+        "ci2_single": ci2_single,
+        "ci2_tested": ci2_tested,
+        "ci2_total": ci2_total,
     }
 
+
+def _build_reliability_section(data: dict[str, Any]) -> str:
+    val_data = data["rel_val"]
+    test_data = data["rel_test"]
+    val_bins = {b["bin"]: b for b in val_data["bins"]}
+    test_bins = {b["bin"]: b for b in test_data["bins"]}
+
+    def _fmt_prec(n_val: int, prec: float | None) -> str:
+        if n_val == 0 or prec is None:
+            return "—"
+        return f"{prec:.4f} (%{prec * 100:.1f})"
+
+    lines = [
+        "### Güven aralığına göre kesinlik (val ve test)",
+        "",
+        "| aralık | val n | val kesinlik | test n | test TP | test FP | test kesinlik |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+
+    for r_key in [b["bin"] for b in val_data["bins"]]:
+        vb = val_bins[r_key]
+        tb = test_bins[r_key]
+        label = r_key.replace("-", "–")
+        vn = int(vb["n"])
+        tn = int(tb["n"])
+        if vn == 0 and tn == 0:
+            lines.append(f"| {label} | 0 | — | 0 | — | — | — |")
+        else:
+            v_prec_str = _fmt_prec(vn, vb["precision"])
+            t_prec_str = _fmt_prec(tn, tb["precision"])
+            t_tp_str = "—" if tn == 0 else str(int(tb["TP"]))
+            t_fp_str = "—" if tn == 0 else str(int(tb["FP"]))
+            lines.append(
+                f"| {label} | {vn} | {v_prec_str} | {tn} | {t_tp_str} | {t_fp_str} | {t_prec_str} |"
+            )
+
+    v_tot_n = int(val_data["total_detections"])
+    v_tot_p = float(val_data["overall_precision"])
+    t_tot_n = int(test_data["total_detections"])
+    t_tot_tp = int(test_data["total_TP"])
+    t_tot_fp = int(test_data["total_FP"])
+    t_tot_p = float(test_data["overall_precision"])
+    lines.append(
+        f"| **Toplam (≥ 0.395)** | **{v_tot_n}** | **{_fmt_prec(v_tot_n, v_tot_p)}** | "
+        f"**{t_tot_n}** | **{t_tot_tp}** | **{t_tot_fp}** | **{_fmt_prec(t_tot_n, t_tot_p)}** |"
+    )
+
+    lines.extend([
+        "",
+        "Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; "
+        "test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. "
+        "Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) "
+        "Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için "
+        "genel bir kalibrasyon iddiası yapılmaz (arayüzde güveni `0.6`'nın altındaki tespitlere eklenen *\"Düşük güven: gözden geçirin\"* "
+        "etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).",
+    ])
+    return "\n".join(lines)
+
+
+
+
+def _build_baseline_section() -> str:
+    """Ön işleme farkı ve klasik şablon farkı bölümleri (results/baseline/*.csv). Dosya yoksa boş."""
+    base = REPO_ROOT / "results" / "baseline"
+    sq = base / "yolo_square_classaware.csv"
+    vs = base / "template_diff_vs_yolo.csv"
+    pj = base / "template_diff_params.json"
+    if not (sq.exists() and vs.exists() and pj.exists()):
+        return ""
+    op = {r["split"]: r for r in _read_csv(RESULTS_DIR / "operating_point.csv")}
+    sqr = {r["split"]: r for r in _read_csv(sq)}
+    params = json.loads(pj.read_text(encoding="utf-8"))
+    rows = _read_csv(vs)
+
+    def get(split: str, kart: str, method: str, iou: str) -> dict:
+        for r in rows:
+            if r["split"] == split and r["kart"] == kart and r["yöntem"].startswith(method) and r["iou"] == iou:
+                return r
+        raise KeyError((split, kart, method, iou))
+
+    out = [
+        "",
+        "### Değerlendirme ve Uygulama Ön İşlemesi Farkı",
+        "",
+        "Raporlanan çalışma noktası Ultralytics `DetectionValidator` ile `rect=True` (en az dolgu) ölçüldü; web, EXE ve Gradio ise görüntüyü `1024×1024` kareye dolguyla yerleştirir. "
+        "Uygulamanın ön işlemesi ONNX FP32 ile yeniden üretildi (PyTorch referansıyla 62/62 kutu eşleşmesi) ve aynı eşikle (`0.395`, sınıflı, IoU ≥ 0.5) ölçüldü:",
+        "",
+        "| Küme | Ön işleme | TP | FP | FN | P | R | F1 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for split in ("val", "test"):
+        o = op[split]
+        out.append(f"| {split} | `rect=True` (raporlanan) | {o['TP']} | {o['FP']} | {o['FN']} | {float(o['P']):.4f} | {float(o['R']):.4f} | {float(o['F1']):.4f} |")
+        q = sqr[split]
+        out.append(f"| {split} | kare letterbox (uygulama) | {q['TP']} | {q['FP']} | {q['FN']} | {float(q['P']):.4f} | {float(q['R']):.4f} | {float(q['F1']):.4f} |")
+    out += [
+        "",
+        "Test etkilenmiyor; val'deki fark neredeyse tamamen **Kart 05'teki tek sabit `spurious_copper` şablon noktasından** geliyor (güven `0.400–0.408`, `rect` ölçümünde eşiğin altında). "
+        "FP32–INT8 farkı, Linux CI'daki `+3` tespit ve bu ön işleme farkı aynı noktada görünüyor: eşiğe yapışık bir şablon özelliği, küçük sayısal değişikliklerle eşiği geçip geçmiyor. "
+        "Eşik ve raporlanan metrikler değiştirilmedi (test görüldükten sonra yeniden seçim yapılmaz); arayüzdeki val PR eğrisi ve güvenilirlik verisi `rect=True` ölçümündendir.",
+        "",
+        "### Klasik Şablon Farkı Karşılaştırması",
+        "",
+        "PKU-Market-PCB'de kusurlu görüntüler `PCB_USED/` şablon fotoğrafıyla **piksel hizalıdır** (faz korelasyonu kayması ~0.001 px): kusurlar şablonun üzerine eklenmiştir. "
+        "Bunun ne kadar kolaylaştırdığını ölçmek için referanslı klasik bir yöntem denendi: gri ton fark → Gauss → eşik → genişletme → bağlı bileşenler (sınıf vermez). "
+        f"Parametreler **yalnız train kartlarında** seçildi (bulanıklık {params['blur']}, eşik {params['thr']}, genişletme {params['dilate']}, en az alan {params['min_area']}; train F1 {float(params['F1']):.3f}); val ve test birer kez değerlendirildi. "
+        "Kıyas sınıfsızdır (yalnız yer); YOLO uygulamanın ön işlemesiyle, eşik `0.395`.",
+        "",
+        "| Küme | Yöntem | F1 (IoU ≥ 0.5) | P | R | F1 (IoU ≥ 0.1) |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for split in ("val", "test"):
+        for m, label in (("şablon", "Klasik şablon farkı"), ("YOLO", "YOLO11s")):
+            a, b = get(split, "tümü", m, "0.5"), get(split, "tümü", m, "0.1")
+            out.append(f"| {split} | {label} | {float(a['F1']):.3f} | {float(a['P']):.3f} | {float(a['R']):.3f} | {float(b['F1']):.3f} |")
+    out += ["", "Kart bazında (F1, IoU ≥ 0.5):", "", "| Kart | Şablon noktası | Klasik şablon farkı | YOLO11s |", "|---|---|---:|---:|"]
+    for split, kart, has_tp in (("val", "05", "var"), ("test", "06", "var (114 FP)"), ("val", "11", "yok"), ("test", "10", "yok")):
+        a, b = get(split, kart, "şablon", "0.5"), get(split, kart, "YOLO", "0.5")
+        out.append(f"| {kart} ({split}) | {has_tp} | {float(a['F1']):.3f} | {float(b['F1']):.3f} |")
+    out += [
+        "",
+        "**Yorum:** Hizalı bir referans varken basit fark alma bu veri setinde yer tespitinde YOLO ile başa baş ya da üstün. Bu, PKU'daki başarının gerçek üretim hattını (hizalama, ışık farkı, referans yokluğu) temsil etmediğinin doğrudan kanıtıdır. "
+        "YOLO'nun geride kaldığı kartlar tam olarak şablon noktası olan kartlardır; şablon noktası olmayan kartlarda YOLO öndedir. YOLO'nun değeri referans görüntü gerektirmemesi ve kusur sınıfı vermesidir. "
+        "Kaynak: `scripts/baseline_template_diff.py`, `results/baseline/`.",
+    ]
+    return "\n".join(out)
+
+def _ui_v11_section() -> list[str]:
+    """v1.1 arayüz ekranları: yalnız results/readme/ altında gerçekten var olan görüntüler."""
+    shots = [
+        ("home_desktop_dark.png", "Ana Sayfa"),
+        ("detect_desktop_dark.png", "Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi"),
+        ("explain_desktop_dark.png", "Açıklama: LayerCAM ve \"Bu karar nasıl verildi?\""),
+        ("results_desktop_light.png", "Sonuçlar (açık tema)"),
+    ]
+    mobile = [
+        ("detect_mobile_dark.png", "Muayene (mobil)"),
+        ("explain_mobile_light.png", "Açıklama (mobil, açık)"),
+        ("guide_mobile_dark.png", "Kusur Rehberi (mobil)"),
+    ]
+    ui_dir = REPO_ROOT / "results" / "readme"
+    present = [(f, c) for f, c in shots if (ui_dir / f).exists()]
+    present_m = [(f, c) for f, c in mobile if (ui_dir / f).exists()]
+    if not present and not present_m:
+        return []
+    out = [
+        "### Uygulama Ekranları (v1.1)",
+        "",
+        "Aynı arayüz web, Windows ve Android'de çalışır; koyu/açık tema, Türkçe/İngilizce. Ekranlar: Ana Sayfa, Muayene, Açıklama, Toplu Muayene, Geçmiş (cihazda), Kusur Rehberi, Sonuçlar, Geliştirici, Ayarlar. Muayene raporu PDF olarak cihazda üretilir ve standart uygunluk belgesi değildir.",
+        "",
+    ]
+    for f, c in present:
+        out += [f"**{c}**", "", f"![{c}](results/readme/{f})", ""]
+    if present_m:
+        out += [
+            "| " + " | ".join(c for _, c in present_m) + " |",
+            "|" + "---|" * len(present_m),
+            "| " + " | ".join(f'<img src="results/readme/{f}" width="240" alt="{c}">' for f, c in present_m) + " |",
+            "",
+        ]
+    out += [
+        "Güveni `0.6`'nın altındaki tespitler arayüzde *\"Düşük güven: gözden geçirin\"* etiketi alır (Bölüm 4'teki güven aralığı tablosuna dayanan, test sonrası eklenmiş kullanılabilirlik özelliği).",
+        "",
+    ]
+    return out
 
 def _build_everywhere_section(data: dict[str, Any]) -> str:
     parity_images = data["parity_images"]
@@ -259,6 +442,11 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
     rel = data["rel"]
     phone = data["phone"]
 
+    ci2_s = data["ci2_summary"]
+    ci2_1 = data["ci2_single"]
+    ci2_tested = data["ci2_tested"]
+    ci2_total = data["ci2_total"]
+
     int8_note = "INT8 dinamik ONNX elendi (WebGPU'da çalışmadı, WASM'da doğruluk düştü)"
     exe_size_label = rel["exe_mib"] or desk["nsis_mib"]
 
@@ -282,6 +470,7 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
         f"- **Tauri 2 Masaüstü (`desktop/`, Windows EXE — `{rel['exe_name']}`, `{exe_size_label}`):** Aynı arayüzü `isTauri()` köprüsüyle (`get_sidecar_status` / `get_api_base_url` / `get_platform` / `tracera://api-ready`) paketlenmiş Python FastAPI yan sunucusuna bağlar; varsayılan motor **Yerel sunucu**dur (OpenVINO INT8 tespit + LayerCAM Katman 4).",
         f"- **Android APK (Tauri 2 WebView — `{rel['apk_name']}`, `{rel['apk_mib']}` debug imzalı):** `get_sidecar_status.available = false` ve `get_platform = \"android\"` bildirildiğinden yerel motor ekranı gösterilmez; tespit doğrudan **ORT-Web** üzerinde çalışır ve **Yerel sunucu** gizlenir, ısı haritası yalnız Bulut'a (`ebboo/tracera`) yönlenir.",
         "",
+        *_ui_v11_section(),
         "### Tarayıcı Paritesi (`OrtDetector` WebGPU vs. PyTorch FP32 Referans)",
         "",
         f"{len(parity_images)} val görüntüsü üzerinde (`results/web_parity.csv`, `conf = 0.25` iki yönlü IoU ≥ 0.5 eşleşmesi ve `conf = 0.395` sayım kıyası):",
@@ -337,6 +526,17 @@ def _build_everywhere_section(data: dict[str, Any]) -> str:
         "",
         f"`conf ≥ 0.395` noktasındaki tüm FP32–INT8 farkları rastgele dağılmamıştır; Kart 05 şablonunda temiz kartta da yanlış alarm üreten 2 sabit `spurious_copper` arka plan konumunda ({b05_desc}) yoğunlaşmıştır.",
         "",
+        "### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)",
+        "",
+        "GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):",
+        "",
+        "| Kapsam | Ort. \\|Δconf\\| | Maks. \\|Δconf\\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |",
+        "|---|---:|---:|---:|---:|---|",
+        f"| GitHub runner (`{ci2_tested}/{ci2_total}` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **{float(ci2_s['mean_abs_dconf']):.3f}** | **{float(ci2_s['max_abs_dconf']):.3f}** | **{float(ci2_s['mean_iou']):.3f}** | **{int(ci2_s['ref_count_0395'])} → {int(ci2_s['linux_count_0395'])} ({int(ci2_s['count_diff_0395']):+d})** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |",
+        f"| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **{float(ci2_1['mean_iou']):.3f}** | **{int(ci2_1['ref_count_0395'])} → {int(ci2_1['linux_count_0395'])} ({int(ci2_1['count_diff_0395'])})** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `{float(ci2_1['mean_abs_dconf']):.4f}` / `{float(ci2_1['max_abs_dconf']):.4f}`) |",
+        "",
+        "> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.",
+        "",
         "### Çevrimdışı Kullanım, PWA ve İlk İndirme Boyutu",
         "",
         f"- **İlk açılış precache toplamı:** yalnızca uygulama kabuğu (**{precache_mb}**). Model açılışta kendiliğinden indirilmez.",
@@ -369,11 +569,12 @@ def _check_forbidden(markdown: str, everywhere_section: str) -> None:
         "<owner>",
         "<repo>",
         "yer tutucu",
+        "~0.01",
     ):
         if term in lower_all:
             raise ValueError(f"Yasak veya guncel olmayan ifade tespit edildi: {term!r}")
 
-    if "linux'ta ~0.01 güven kayması gözlendi (ci raporu)" in lower_all:
+    if "linux'ta" in lower_all and "güven kayması gözlendi (ci raporu)" in lower_all:
         raise ValueError("Eski Platform Paritesi Notu cumlesi kalmis")
 
     # Oracle P/R degerleri sadece Metodolojik Not (uyari) icinde gecmeli, baslik maddelerinde yer almamali
@@ -401,6 +602,7 @@ def build_final_readme_draft() -> str:
     # Zaten v1.0.0 yapisina donusturulmus README.md uzerinde yeniden calisilirsa
     # yalnizca veri odakli bolumleri (Bölüm 7 ve English Summary) tazele.
     everywhere_block = _build_everywhere_section(data)
+    reliability_block = _build_reliability_section(data) + _build_baseline_section()
     two_way_pct_1dp = f"{float(data['parity_summary']['two_way_match_pct']):.1f}%"
     n_parity_imgs = len(data["parity_images"])
     phone_model_ms_int = round(float(data["phone"]["medyan_model_ms"]))
@@ -414,8 +616,39 @@ def build_final_readme_draft() -> str:
 
     draft_comment = "<!-- Bu taslak scripts/make_readme_final.py tarafından README.md + results/*.csv + release/SHA256SUMS.txt + KARARLAR.md kaynağından otomatik üretilmiştir. -->\n\n"
 
+    ci2_s = data["ci2_summary"]
+    platform_note_line = (
+        f"> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi (aynı makinede yerel kıyas `0.000`). "
+        f"GitHub runner (CI #2, `results/ci2_linux_parity.csv`) üzerinde {data['ci2_tested']}/{data['ci2_total']} "
+        f"val görüntüsünde (`conf = 0.25`) ort. `|Δconf| = {float(ci2_s['mean_abs_dconf']):.3f}`, "
+        f"maks. `{float(ci2_s['max_abs_dconf']):.3f}`, ort. `IoU = {float(ci2_s['mean_iou']):.3f}`, "
+        f"`0.395`'te tespit `{int(ci2_s['ref_count_0395'])} → {int(ci2_s['linux_count_0395'])}` (`{int(ci2_s['count_diff_0395']):+d}`); "
+        f"tek görüntü `pytest` testinde maks. güven farkı `|Δ| = 0.0034` (`0.827784` vs `0.831160`) ölçüldü. "
+        f"Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması."
+    )
+
+    def _inject_reliability(text: str) -> str:
+        rel_re = re.compile(
+            r"### Güven aralığına göre kesinlik \(val ve test\).*?(?=\n\n---\n\n## 5\.)",
+            flags=re.DOTALL,
+        )
+        if rel_re.search(text):
+            return rel_re.sub(lambda _m: reliability_block, text, count=1)
+        sec5_marker = "---\n\n## 5. Açıklanabilir Yapay Zeka (XAI) Doğrulama Protokolü"
+        if sec5_marker not in text:
+            raise ValueError("Bölüm 5 siniri bulunamadi")
+        return text.replace(sec5_marker, f"{reliability_block}\n\n{sec5_marker}", 1)
+
     if "## 7. Her yerde çalışır: web, masaüstü, Android" in raw_base:
         body = re.sub(r"^<!-- Bu taslak .*?-->\s*", "", raw_base, count=1, flags=re.DOTALL)
+        body = re.sub(
+            r"^> \*\*Platform Paritesi Notu:\*\*.*$",
+            lambda _m: platform_note_line,
+            body,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        body = _inject_reliability(body)
         sec7_re = re.compile(
             r"## 7\. Her yerde çalışır: web, masaüstü, Android.*?\n---(?=\n\n## 8\.)",
             flags=re.DOTALL,
@@ -457,7 +690,7 @@ def build_final_readme_draft() -> str:
 
     platform_note_block = [
         "",
-        "> **Platform Paritesi Notu:** Sonuçlar Windows'ta üretildi; Linux Docker testlerinde aynı görüntüde ~0.01 güven farkı gözlendi (ör. 0.8312 → 0.8408); CI Linux parite raporu bu farkı ölçmek için eklendi.",
+        platform_note_line,
     ]
 
     app_build_cmds = [
@@ -536,6 +769,7 @@ def build_final_readme_draft() -> str:
 
     sec8_marker = "## 8. Endüstriyel PCB-AoI Transfer Deneyi (Null Sonuç)"
     draft = draft.replace(sec8_marker, f"{everywhere_block}\n\n{sec8_marker}", 1)
+    draft = _inject_reliability(draft)
 
     sec11_marker = "## 11. Veri Kaynakları ve Lisans"
     cmds_text = "\n".join(app_build_cmds)
@@ -564,8 +798,10 @@ def strip_draft_comment(markdown: str) -> str:
 
 def main() -> int:
     import sys
+    from make_readme_tables import main as update_readme_tables
 
     write_readme = "--write-readme" in sys.argv[1:]
+    update_readme_tables()
     content = build_final_readme_draft()
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(content, encoding="utf-8", newline="\n")

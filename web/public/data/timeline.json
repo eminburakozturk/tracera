@@ -1,0 +1,74 @@
+{
+  "status": "approved",
+  "requires_claude_approval": false,
+  "source": "KARARLAR.md",
+  "note": "Claude tarafından 2026-11-14'te KARARLAR.md, README.md ve results/ ile karşılaştırılıp onaylandı (4 özet düzeltildi).",
+  "items": [
+    {
+      "id": 1,
+      "date": "2026-11-11",
+      "title": "PKU-Market-PCB veri seti ve kart bazlı bölme kuralı",
+      "summary": "693 görüntü incelendi; döndürülmüş kopyalar (rotation/) sızıntı riski nedeniyle dışarıda bırakıldı ve kart bazlı bölme (6 eğitim, 2 doğrulama, 2 test kartı) kilitlendi."
+    },
+    {
+      "id": 2,
+      "date": "2026-11-11",
+      "title": "Rastgele vs. kart bazlı 5-kat CV kıyaslaması",
+      "summary": "Aynı 640 baseline eğitiminde rastgele bölmenin görülmemiş kartlara genellemeyi ~13 puan mAP50 (0.936 vs 0.806) iyimser gösterdiği kanıtlandı."
+    },
+    {
+      "id": 3,
+      "date": "2026-11-12",
+      "title": "1024 çözünürlük ve last.pt seçimi (5-kat CV)",
+      "summary": "Sabit 80 epoch 5-katlı kart bazlı CV'de 1024 çözünürlük 5 katın tamamında 640'ı geçti (mAP50 0.858±0.152) ve seçim yanlılığı olmaması için last.pt kilitlendi."
+    },
+    {
+      "id": 4,
+      "date": "2026-11-12",
+      "title": "Katman 4 LayerCAM açıklanabilirlik doğrulaması",
+      "summary": "Mutlak bütçeli silme testinde (n=150) %97 kazanma oranı, 0.70 ortalama skor düşüşü ve %61 kutu içi enerjiyle LayerCAM @ Katman 4 varsayılan XAI yöntemi seçildi."
+    },
+    {
+      "id": 5,
+      "date": "2026-11-12",
+      "title": "Nihai test, conf=0.395 ve Kart 06 şablon bulgusu",
+      "summary": "Kilitli test setinde mAP50 0.9225 ölçülürken, conf=0.395 çalışma noktasındaki 142 yanlış pozitifin 114'ünün Kart 06'daki 2 sabit konumdan kaynaklandığı bulundu."
+    },
+    {
+      "id": 6,
+      "date": "2026-11-12",
+      "title": "Edge hızlandırma: OpenVINO INT8 ve TensorRT FP16",
+      "summary": "1024 modelde OpenVINO INT8 laptop CPU'da 36.7 ms (~27 FPS), TensorRT FP16 RTX 4060'ta 3.34 ms model süresine ulaştı; mAP kaybı ölçülmedi."
+    },
+    {
+      "id": 7,
+      "date": "2026-11-12",
+      "title": "PCB-AoI gerçek veri transfer deneyi (3 seed)",
+      "summary": "COCO ve PKU başlangıçları arasında AoI test mAP50 farkı +0.009 ile seed gürültüsü içinde kaldığı için ön eğitim faydası gösterilemedi."
+    },
+    {
+      "id": 8,
+      "date": "2026-11-13",
+      "title": "Tarayıcı içi FP32 ONNX (WebGPU) parite testi",
+      "summary": "Tarayıcıda çalışan WebGPU FP32 ONNX çıkarımı PyTorch referansıyla %96.72 eşleşme (ort. IoU 0.9885) verdi; laptopta medyan model süresi 36.05 ms."
+    },
+    {
+      "id": 9,
+      "date": "2026-11-13",
+      "title": "Tauri 2 Windows masaüstü ve yerel API paketi",
+      "summary": "React/TypeScript arayüzü gömülü OpenVINO ve LayerCAM FastAPI yan sunucusuyla birlikte tek NSIS Windows kurulum dosyasında (315.03 MiB) paketlendi."
+    },
+    {
+      "id": 10,
+      "date": "2026-11-13",
+      "title": "Android APK derlemesi ve cihaz içi WebGPU ölçümü",
+      "summary": "SM-S948B (Android 17) telefonda ort-webgpu ile medyan 134.15 ms model ve 220.55 ms toplam tespit süresi ölçüldü."
+    },
+    {
+      "id": 11,
+      "date": "2026-11-14",
+      "title": "v1.0.0 açık kaynak sürümü ve GitHub CI yayını",
+      "summary": "GitHub deposu, v1.0.0 EXE/APK sürüm paketi, Hugging Face Space ve model depoları yayına alındı; GitHub Actions CI kuruldu."
+    }
+  ]
+}

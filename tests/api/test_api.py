@@ -38,7 +38,7 @@ def test_health(client: TestClient) -> None:
     data = resp.json()
     assert data["status"] == "ok"
     assert data["model"] == "yolo11s"
-    assert data["version"] == "1"
+    assert data["version"] == "1.1.0"
     assert data["device"] == "cpu"
     assert "openvino-int8" in data["backends"]
 
@@ -98,6 +98,13 @@ def test_explain_returns_two_valid_pngs(client: TestClient) -> None:
     assert exp_data["method"] == "layercam"
     assert exp_data["layer"] == 4
     assert exp_data["timing"]["total_ms"] > 0
+    assert isinstance(exp_data["energy_in_box"], float)
+    assert 0.0 <= exp_data["energy_in_box"] <= 1.0
+    assert isinstance(exp_data["peak_in_box"], bool)
+    assert isinstance(exp_data["peak_xy"], list) and len(exp_data["peak_xy"]) == 2
+    img_w = det_resp.json()["width"]
+    img_h = det_resp.json()["height"]
+    assert 0 <= exp_data["peak_xy"][0] < img_w and 0 <= exp_data["peak_xy"][1] < img_h
 
     for field in ("overlay_png", "zoom_png"):
         b64_str = exp_data[field]

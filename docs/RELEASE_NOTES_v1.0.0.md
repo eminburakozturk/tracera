@@ -10,7 +10,7 @@ Tracera; PKU-Market-PCB veri seti üzerinde eğitilmiş YOLO11s (`1024×1024`) m
 | `Tracera_1.0.0_android_arm64.apk` | Android (`arm64-v8a`) | 58.29 MiB (61,123,275 bayt) | `ecadf956d04065a335b8d577e07a296f41c2781f26848b0570389a58bbe17559` |
 | `SHA256SUMS.txt` | Tümü | 194 bayt | — |
 
-- **Windows Masaüstü (`Tracera_1.0.0_x64-setup.exe`)**: Tauri 2 arayüzü + yerleşik CPU FastAPI yan sunucusu (`tracera-api`, OpenVINO INT8 tespit + Katman 4 LayerCAM ısı haritası) ve isteğe bağlı tarayıcı (`ort-webgpu` / `ort-wasm`) çıkarımı. Kurulum sonrası disk kullanımı yaklaşık `1.05 GiB`.
+- **Windows Masaüstü (`Tracera_1.0.0_x64-setup.exe`)**: Tauri 2 arayüzü + yerleşik CPU FastAPI yan sunucusu (`tracera-api`, OpenVINO INT8 tespit + Katman 4 LayerCAM ısı haritası) ve isteğe bağlı tarayıcı (`ort-webgpu` / `ort-wasm`) çıkarımı. Kurulum sonrası disk kullanımı yaklaşık `1.02 GiB`.
 - **Android (`Tracera_1.0.0_android_arm64.apk`)**: Tauri 2 WebView içinde doğrudan cihazda ONNX Runtime Web (`ort-webgpu` öncelikli, yoksa `ort-wasm`) ile `1024×1024` FP32 ONNX (`tracera_1024.onnx`) çıkarımı, galeri/kamera girişi ve uygulama içi hız testi.
 
 Bütünlük doğrulaması için:
@@ -36,7 +36,7 @@ sha256sum -c SHA256SUMS.txt
 
 ## 3. Sistem Gereksinimleri
 
-- **Windows Masaüstü**: Windows 10 veya 11 (`x86_64`), en az `1.5 GB` boş disk alanı (kurulu paket `~1.05 GiB`), `4 GB+` RAM (önerilen `8 GB+`).
+- **Windows Masaüstü**: Windows 10 veya 11 (`x86_64`), en az `1.5 GB` boş disk alanı (kurulu paket `~1.02 GiB`), `4 GB+` RAM (önerilen `8 GB+`).
 - **Android**: `arm64-v8a` işlemcili Android cihaz, güncel Chrome / Android System WebView (WebGPU hızlandırması için güncel WebView gereklidir).
 
 ## 4. Ölçülen Performans ve Doğruluk (CSV Kayıtlarından)

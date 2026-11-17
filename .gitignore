@@ -25,7 +25,10 @@ model_repo/
 dist/
 build/
 release/
+dist_release/
 .pytest_cache/
 .claude/
 results/demo/*.webm
 
+results/baseline/*.partial.json
+claude_run/

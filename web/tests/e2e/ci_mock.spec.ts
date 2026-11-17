@@ -13,9 +13,9 @@ test.describe("CI Mock & Route E2E (WebGPU / Python API bağımsız)", () => {
     await page.goto("/");
 
     await page.getByTestId("backend-select").click();
-    await page.getByRole("option", { name: /Mock/i }).click();
+    await page.getByRole("option", { name: /Örnek veri|Sample data/i }).click();
 
-    await expect(page.getByTestId("backend-badge")).toContainText(/Mock/i);
+    await expect(page.getByTestId("backend-badge")).toContainText(/Örnek veri|Sample data/i);
     await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
 
     await page.locator('[data-testid="bbox-0"] rect').first().click();
@@ -23,7 +23,7 @@ test.describe("CI Mock & Route E2E (WebGPU / Python API bağımsız)", () => {
 
     await expect(page.getByTestId("explain-zoom-img")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("explain-overlay-img")).toBeVisible();
-    await expect(page.getByTestId("explain-source-badge")).toContainText(/Mock/i);
+    await expect(page.getByTestId("explain-source-badge")).toContainText(/Örnek veri|Sample data/i);
 
     await page.getByTestId("tab-results").click();
     await expect(page.getByRole("heading", { level: 2 }).first()).toBeVisible();
@@ -242,7 +242,7 @@ test.describe("CI Mock & Route E2E (WebGPU / Python API bağımsız)", () => {
     expect(isDarkDesktop).toBe(false);
 
     await dPage.getByTestId("backend-select").click();
-    await dPage.getByRole("option", { name: /Mock/i }).click();
+    await dPage.getByRole("option", { name: /Örnek veri|Sample data/i }).click();
     await dPage.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
 
     await assertNoContrastViolations(dPage, "light-desktop-detect");
@@ -277,7 +277,7 @@ test.describe("CI Mock & Route E2E (WebGPU / Python API bağımsız)", () => {
     expect(isDarkMobile).toBe(false);
 
     await mPage.getByTestId("backend-select").click();
-    await mPage.getByRole("option", { name: /Mock/i }).click();
+    await mPage.getByRole("option", { name: /Örnek veri|Sample data/i }).click();
     await mPage.waitForSelector('[data-testid^="bbox-"]', { timeout: 15_000 });
 
     await assertNoContrastViolations(mPage, "light-mobile-detect");

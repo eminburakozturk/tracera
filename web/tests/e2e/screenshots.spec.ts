@@ -14,6 +14,7 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
   const desktopPage = await desktopCtx.newPage();
   await desktopPage.goto("/");
+  await desktopPage.getByTestId("tab-detect").click(); // v1.1: Ana Sayfa'dan Muayene'ye
   await expect(desktopPage.getByTestId("run-detect-btn")).toBeEnabled({
     timeout: 15_000,
   });
@@ -34,6 +35,7 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
   const mobilePage = await mobileCtx.newPage();
   await mobilePage.goto("/");
+  await mobilePage.getByTestId("mobile-tab-detect").click(); // v1.1: Ana Sayfa'dan Muayene'ye
   await expect(mobilePage.getByTestId("run-detect-btn")).toBeEnabled({
     timeout: 15_000,
   });
@@ -60,7 +62,8 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
 
   // Live tab (390px)
-  await mobilePage.getByTestId("mobile-tab-live").click();
+  await mobilePage.getByTestId("mobile-tab-more").click();
+  await mobilePage.getByTestId("more-link-live").click();
   await expect(mobilePage.getByTestId("live-camera-note")).toBeVisible();
   await mobilePage.waitForFunction(
     () => Number(document.querySelector('[data-testid="live-det-count"]')?.getAttribute("data-frames") ?? "0") >= 1,
@@ -88,7 +91,8 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
 
   // Results tab (390px) — Hata analizi galerisi ve cihaz hız testi kartı dahil
-  await mobilePage.getByTestId("mobile-tab-results").click();
+  await mobilePage.getByTestId("mobile-tab-more").click();
+  await mobilePage.getByTestId("more-link-results").click();
   await expect(mobilePage.getByTestId("error-analysis-section")).toBeVisible();
   await expect(mobilePage.getByTestId("device-bench-section")).toBeVisible();
   await checkNoHorizontalOverflow("results");
@@ -98,7 +102,8 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
 
   // About tab (390px)
-  await mobilePage.getByTestId("mobile-tab-about").click();
+  await mobilePage.getByTestId("mobile-tab-more").click();
+  await mobilePage.getByTestId("more-link-about").click();
   await expect(
     mobilePage.getByText(/Tracera Hakkında|About Tracera/i),
   ).toBeVisible();

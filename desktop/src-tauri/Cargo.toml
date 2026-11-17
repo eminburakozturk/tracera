@@ -1,6 +1,6 @@
 [package]
 name = "tracera-desktop"
-version = "1.0.0"
+version = "1.1.0"
 description = "Tracera PCB Hata Tespiti masaustu uygulamasi"
 authors = ["Tracera"]
 edition = "2021"

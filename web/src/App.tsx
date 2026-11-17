@@ -1,12 +1,24 @@
 import * as React from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { AboutView } from "./components/AboutView";
+import { BatchView, type BatchQueueItem } from "./components/BatchView";
 import { DetectView } from "./components/DetectView";
 import { ExplainView } from "./components/ExplainView";
+import { GuideView } from "./components/GuideView";
+import { HistoryView } from "./components/HistoryView";
+import { HomeView } from "./components/HomeView";
 import { LiveView } from "./components/LiveView";
 import { MobileNav } from "./components/MobileNav";
+import { MoreView } from "./components/MoreView";
+import {
+  ONBOARDING_STORAGE_KEY,
+  OnboardingModal,
+} from "./components/OnboardingModal";
 import { ResultsView } from "./components/ResultsView";
+import { SettingsView } from "./components/SettingsView";
+import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { VAL_EXAMPLES, type ValExampleItem } from "./fixtures";
 import {
@@ -25,15 +37,20 @@ import {
 } from "./inference/ort/OrtDetector";
 import type { Detector } from "./inference/types";
 import { loadAnalysis } from "./lib/analysis";
+import { MOCK_ENABLED } from "./lib/env";
+import { saveInspectionToHistory } from "./lib/historyDb";
 import { loadModelMeta } from "./lib/meta";
 import { loadMetrics } from "./lib/metrics";
+import { generateInspectionPdfBytes, triggerPdfDownload } from "./lib/pdfReport";
 import { connectTauriSidecar, isTauriApp } from "./platform/tauri";
 import { useAppStore } from "./store/useAppStore";
+import type { HistoryRecord } from "./types";
 
 export const ORT_ENABLED = true;
 
 export function App() {
   const { t, i18n } = useTranslation();
+  const prefersReducedMotion = useReducedMotion();
 
   const activeTab = useAppStore((s) => s.activeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
@@ -68,6 +85,25 @@ export function App() {
   const setExplainError = useAppStore((s) => s.setExplainError);
   const setOrtProgress = useAppStore((s) => s.setOrtProgress);
   const setOrtModelCached = useAppStore((s) => s.setOrtModelCached);
+  const bumpHistoryVersion = useAppStore((s) => s.bumpHistoryVersion);
+
+  const [onboardingOpen, setOnboardingOpen] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("onboarding") === "1") return true;
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.webdriver &&
+        params.get("onboarding") !== "1"
+      ) {
+        return false;
+      }
+      return localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "1";
+    } catch {
+      return false;
+    }
+  });
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -77,6 +113,13 @@ export function App() {
   React.useEffect(() => {
     void i18n.changeLanguage(lang);
   }, [lang, i18n]);
+
+  // Üretim derlemesinde Mock seçilemez; kalıcı ayarda kalmışsa tarayıcı motoruna dön.
+  React.useEffect(() => {
+    if (!MOCK_ENABLED && backendChoice === "mock") {
+      setBackendChoice("ort");
+    }
+  }, [backendChoice, setBackendChoice]);
 
   const recheckHealth = React.useCallback(async () => {
     try {
@@ -112,12 +155,18 @@ export function App() {
       );
     }
     return new MockDetector();
-  }, [apiBaseUrl, backendChoice, cloudSpaceId, getOrtEpPreference, setOrtProgress]);
+  }, [
+    apiBaseUrl,
+    backendChoice,
+    cloudSpaceId,
+    getOrtEpPreference,
+    setOrtProgress,
+  ]);
 
   const detectReqSeqRef = React.useRef(0);
 
   const runDetectWithFile = React.useCallback(
-    async (file: File, conf: number) => {
+    async (file: File, conf: number, saveToHistory = true) => {
       const reqId = ++detectReqSeqRef.current;
       setDetectLoading(true);
       setDetectError(null);
@@ -130,6 +179,14 @@ export function App() {
           setApiHealth({ status: "online" });
         } else if (backendChoice === "ort") {
           setOrtModelCached(true);
+        }
+        if (saveToHistory) {
+          void saveInspectionToHistory({
+            filename: file.name,
+            fileOrUrl: file,
+            confThreshold: conf,
+            result,
+          }).then(() => bumpHistoryVersion());
         }
       } catch (err) {
         if (reqId !== detectReqSeqRef.current) return;
@@ -149,6 +206,7 @@ export function App() {
     [
       apiBaseUrl,
       backendChoice,
+      bumpHistoryVersion,
       createDetector,
       setApiHealth,
       setDetectError,
@@ -226,6 +284,29 @@ export function App() {
     [handleSelectFile, setDetectError, setSelectedImage],
   );
 
+  const handleOpenHistoryRecord = React.useCallback(
+    async (rec: HistoryRecord) => {
+      try {
+        const resp = await fetch(rec.thumbnailDataUrl);
+        const blob = await resp.blob();
+        const file = new File([blob], rec.filename, {
+          type: blob.type || "image/jpeg",
+        });
+        setSelectedImage({
+          file,
+          url: rec.thumbnailDataUrl,
+          name: rec.filename,
+        });
+        setConfThreshold(rec.confThreshold);
+        setDetectResult(rec.result);
+        setActiveTab("detect");
+      } catch {
+        setActiveTab("detect");
+      }
+    },
+    [setActiveTab, setConfThreshold, setDetectResult, setSelectedImage],
+  );
+
   const handleRunDetect = React.useCallback(
     async (confOverride?: number) => {
       const img = useAppStore.getState().selectedImage;
@@ -243,7 +324,8 @@ export function App() {
     const img = state.selectedImage;
     const detections = state.detectResult?.detections ?? [];
     const det =
-      detections.find((d) => d.id === state.selectedDetectionId) ?? detections[0];
+      detections.find((d) => d.id === state.selectedDetectionId) ??
+      detections[0];
     if (!img || !det) return;
 
     const reqId = ++explainReqSeqRef.current;
@@ -314,6 +396,21 @@ export function App() {
     [handleRunExplain, setActiveTab, setSelectedDetectionId],
   );
 
+  const handleExportPdf = React.useCallback(async () => {
+    const state = useAppStore.getState();
+    if (!state.selectedImage || !state.detectResult) return;
+    const pdfBytes = await generateInspectionPdfBytes({
+      filename: state.selectedImage.name,
+      meta: state.meta,
+      confThreshold: state.confThreshold,
+      result: state.detectResult,
+      explainResult: state.explainResult,
+      lang: state.lang,
+    });
+    const baseName = state.selectedImage.name.replace(/\.[^.]+$/, "");
+    triggerPdfDownload(pdfBytes, `${baseName}_tracera_rapor.pdf`);
+  }, []);
+
   const handleSelectExampleRef = React.useRef(handleSelectExample);
   handleSelectExampleRef.current = handleSelectExample;
 
@@ -339,7 +436,10 @@ export function App() {
         try {
           const shouldAutoDetect =
             useAppStore.getState().backendChoice !== "ort" || cachedOrt;
-          await handleSelectExampleRef.current(VAL_EXAMPLES[0], shouldAutoDetect);
+          await handleSelectExampleRef.current(
+            VAL_EXAMPLES[0],
+            shouldAutoDetect,
+          );
         } catch {
           // ignore offline bootstrap failure in unit tests
         }
@@ -430,7 +530,6 @@ export function App() {
     setTauriState,
   ]);
 
-  // Suppress unused variable warnings on confThreshold/detectResult/selectedDetectionId if needed
   void confThreshold;
   void detectResult;
   void selectedDetectionId;
@@ -473,8 +572,12 @@ export function App() {
     );
   }
 
+  const pageTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { type: "spring" as const, stiffness: 360, damping: 32 };
+
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)]">
+    <div className="flex min-h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)]">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-[var(--accent)] focus:px-3 focus:py-2 focus:text-xs focus:font-semibold focus:text-[var(--accent-contrast)]"
@@ -482,26 +585,90 @@ export function App() {
         {t("app.skipToContent")}
       </a>
 
-      <TopBar onRecheckHealth={() => void recheckHealth()} ortEnabled={ORT_ENABLED} />
+      <Sidebar />
 
-      <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">
-        {activeTab === "detect" && (
-          <DetectView
-            onSelectExample={handleSelectExample}
-            onSelectFile={handleSelectFile}
-            onRunDetect={handleRunDetect}
-            onInspectDetection={handleInspectDetection}
-          />
-        )}
-        {activeTab === "live" && <LiveView />}
-        {activeTab === "explain" && (
-          <ExplainView onRunExplain={handleRunExplain} />
-        )}
-        {activeTab === "results" && <ResultsView />}
-        {activeTab === "about" && <AboutView />}
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          onRecheckHealth={() => void recheckHealth()}
+          ortEnabled={ORT_ENABLED}
+        />
 
-      <MobileNav />
+        <main
+          id="main-content"
+          className="mx-auto w-full max-w-7xl flex-1 px-4 py-5"
+        >
+          <AnimatePresence initial={false}>
+            <motion.div
+              key={activeTab}
+              initial={prefersReducedMotion ? false : { y: 6 }}
+              animate={{ y: 0 }}
+              transition={pageTransition}
+            >
+              {activeTab === "home" && (
+                <HomeView
+                  onSelectExample={handleSelectExample}
+                  onSelectFile={handleSelectFile}
+                  onOpenHistoryRecord={handleOpenHistoryRecord}
+                  onRunDetect={() => handleRunDetect()}
+                />
+              )}
+              {activeTab === "detect" && (
+                <DetectView
+                  onSelectExample={handleSelectExample}
+                  onSelectFile={handleSelectFile}
+                  onRunDetect={handleRunDetect}
+                  onInspectDetection={handleInspectDetection}
+                  onExportPdf={handleExportPdf}
+                />
+              )}
+              {activeTab === "live" && <LiveView />}
+              {activeTab === "explain" && (
+                <ExplainView onRunExplain={handleRunExplain} />
+              )}
+              {activeTab === "batch" && (
+                <BatchView
+                  onDetectFile={async (file, conf) => {
+                    const detector = createDetector();
+                    return await detector.detect(file, conf);
+                  }}
+                  onOpenInInspect={(item: BatchQueueItem) => {
+                    if (!item.result) return;
+                    const url = URL.createObjectURL(item.file);
+                    setSelectedImage({
+                      file: item.file,
+                      url,
+                      name: item.filename,
+                    });
+                    setDetectResult(item.result);
+                    setActiveTab("detect");
+                  }}
+                />
+              )}
+              {activeTab === "history" && (
+                <HistoryView onOpenRecord={handleOpenHistoryRecord} />
+              )}
+              {activeTab === "guide" && <GuideView />}
+              {activeTab === "results" && <ResultsView />}
+              {(activeTab === "about" || activeTab === "developer") && (
+                <AboutView />
+              )}
+              {activeTab === "settings" && (
+                <SettingsView
+                  onReopenOnboarding={() => setOnboardingOpen(true)}
+                />
+              )}
+              {activeTab === "more" && <MoreView />}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+
+        <MobileNav />
+      </div>
+
+      <OnboardingModal
+        open={onboardingOpen}
+        onClose={() => setOnboardingOpen(false)}
+      />
     </div>
   );
 }

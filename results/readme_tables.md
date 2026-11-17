@@ -86,6 +86,20 @@
 > - 4 temiz şablon görüntüsünde toplam 3 yanlış alarm üretilmiştir (Kart 10 ve Kart 11'de sıfır yanlış alarm).
 > - Kart 06 temiz şablonunda tespit edilen mouse_bite (güven: 0.5569, cx=1000.6, cy=1380.1), test görüntülerindeki 57 mouse_bite FP'sinin konumuyla tam olarak örtüşmektedir. Bu tespit, hatanın sentetik bozulmadan değil, kartın kendi tasarım şablonundan kaynaklandığını **kesin** olarak doğrular.
 
+### Güven aralığına göre kesinlik (val ve test)
+
+| aralık | val n | val kesinlik | test n | test TP | test FP | test kesinlik |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.395–0.5 | 4 | 1.0000 (%100.0) | 78 | 10 | 68 | 0.1282 (%12.8) |
+| 0.5–0.6 | 13 | 0.8462 (%84.6) | 68 | 10 | 58 | 0.1471 (%14.7) |
+| 0.6–0.7 | 20 | 0.9000 (%90.0) | 41 | 32 | 9 | 0.7805 (%78.0) |
+| 0.7–0.8 | 253 | 0.9763 (%97.6) | 211 | 206 | 5 | 0.9763 (%97.6) |
+| 0.8–0.9 | 240 | 0.9750 (%97.5) | 160 | 158 | 2 | 0.9875 (%98.8) |
+| 0.9–1.0 | 0 | — | 0 | — | — | — |
+| **Toplam (≥ 0.395)** | **530** | **0.9698 (%97.0)** | **558** | **416** | **142** | **0.7455 (%74.6)** |
+
+Güven eşiği (`conf = 0.395`) doğrulama (`val`) kümesinde seçilmiş ve sabit tutulmuştur; test sonuçlarına bakılarak eşik, GEÇTİ/KALDI kuralı veya raporlanan metrikler değiştirilmemiştir. Testteki düşük güven bandı (`0.395–0.6`) yanlış pozitiflerinin büyük bölümü (`142` FP'nin `126`'sı `< 0.6` aralığındadır) Kart 06'daki 2 sabit şablon noktasından gelmektedir. Test kümesi yalnızca 2 karttan (`06` ve `10`) oluştuğu için genel bir kalibrasyon iddiası yapılmaz (arayüzde güveni `0.6`'nın altındaki tespitlere eklenen *"Düşük güven: gözden geçirin"* etiketi test sonrası eklenmiş bir kullanılabilirlik özelliğidir, metrik iddiası değildir).
+
 ### Tablo 6a: XAI Pointing Game, Rastgelelik ve Enerji Oranı (yolo11s @ 1024, n=150 Doğru Tespit)
 
 | Hedef Katman | Yöntem | Kendi Kutu Pointing (Eğitilmiş) | Pointing (Rastgele Model) | Rastgele Şans Oranı | Pencere Alan Oranı | Kutu İçi Enerji (Pencere İçi) | Taban Kutu Alan Oranı |
@@ -131,6 +145,17 @@
 > - **OpenVINO INT8 Başarımı (CPU):** 1024x1024 çözünürlükte OpenVINO INT8 kuantizasyonu, CPU üzerinde model çıkarımını 105.2 ms'den **37.3 ms**'ye indirmiş (~2.8x hızlanma), boyutu 36.5 MB'tan **9.97 MB**'a düşürmüştür. mAP50 kaybı yaşanmamıştır (120 görüntülük val setinde +0.6 puanlık değişim ölçüm gürültüsüdür; 'kayıp yok' şeklinde yorumlanır).
 > - **TensorRT FP16 (GPU):** Model çıkarımını 1024'te **3.34 ms**'ye indirmiştir. Ancak uçtan uca sürede (12.19 ms) darboğaz modelden ziyade PyTorch/CPU ön ve son işleme (letterbox + NMS) kaymaktadır.
 > - **Kapsam:** Tüm değerler dizüstü bilgisayar donanımında ölçülmüştür; Jetson veya gömülü kenar cihaz iddiası yapılmamaktadır.
+
+### Platform Kayması (Linux CI #2 vs. Windows OpenVINO INT8 Referansı)
+
+GitHub Actions Linux runner (`CI #2`, `33037a1`, `results/ci2_linux_parity.csv`) üzerinde OpenVINO INT8 çıkarımı ile Windows referansı karşılaştırılmıştır (Windows'ta aynı makinedeki yerel kıyas farkı `0.000`):
+
+| Kapsam | Ort. \|Δconf\| | Maks. \|Δconf\| | Ort. IoU | Sayım (`conf ≥ 0.395`) | Not |
+|---|---:|---:|---:|---:|---|
+| GitHub runner (`9/10` val görüntüsü, `conf = 0.25` iki yönlü eşleştirme) | **0.020** | **0.136** | **0.982** | **42 → 45 (+3)** | Eşiğe yakın kutularda GEÇTİ/KALDI kararını değiştirebilir |
+| Tek görüntü testi (`val_05_missing_hole_01.jpg`) | — | **0.0034** | **0.993** | **4 → 4 (0)** | `0.0034` değeri **maks. güven farkı**dır (`pytest`: Linux `0.827784` vs. Windows `0.831160`); sayım ve IoU `ci2_linux_parity.csv` (`05_missing_hole_01.jpg`, kutu bazlı `conf=0.25` ort./maks. `|Δconf|`: `0.0087` / `0.0304`) |
+
+> Olası açıklama (doğrulanmadı): INT8 çekirdeklerinin CPU komut setine göre farklı çalışması.
 
 ### Tablo 8: Endüstriyel PCB-AoI Veri Kümesine Transfer Öğrenme Deneyi (Test Seti, 3 Seed, last.pt)
 

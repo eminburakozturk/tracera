@@ -41,13 +41,15 @@ describe("Tracera UI components & wording rules", () => {
     const { container } = render(<ResultsView />);
     const text = container.textContent ?? "";
 
-    expect(text).toContain("0.858 ± 0.152");
-    expect(text).toContain("0.395");
-    expect(text).toContain("test_sablon_noktalari_haric");
+    expect(text).toContain("0,858 ± 0,152");
+    expect(text).toContain("0,395");
+    expect(text).toContain("Test (2 şablon noktası hariç)");
     expect(text).toContain("Ryzen 7 8845HS");
     // Oracle test precision/recall (0.9462 / 0.8577) must NEVER be displayed
     expect(text).not.toContain("0.9462");
+    expect(text).not.toContain("0,9462");
     expect(text).not.toContain("0.8577");
+    expect(text).not.toContain("0,8577");
     for (const pat of FORBIDDEN_PATTERNS) {
       expect(text).not.toMatch(pat);
     }

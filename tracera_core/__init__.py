@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from tracera_core.config import (
     CLASS_COLORS,
+    CLASS_DISPLAY_NAMES_TR,
     CLASS_NAMES,
     DEFAULT_CONF,
     DEFAULT_IOU_NMS,
     IMGSZ,
     LETTERBOX_PAD,
+    LOW_CONF_REVIEW_NOTE_TR,
+    LOW_CONF_REVIEW_UPPER_BOUND,
     META_PATH,
     OPENVINO_MODEL_PATH,
     PYTORCH_MODEL_PATH,
@@ -26,8 +29,10 @@ from tracera_core.engine import (
     ModelManager,
     MultiLayerYoloCAM,
     active_detect_backend,
+    compute_cam_box_metrics,
     detect_openvino,
     explain_layercam,
+    explain_layercam_with_metrics,
     make_overlay_and_zoom,
 )
 from tracera_core.metrics_loader import build_metrics_payload
@@ -43,11 +48,14 @@ from tracera_core.schemas import Detection, DetectResult, ExplainResult, Timing
 
 __all__ = [
     "CLASS_COLORS",
+    "CLASS_DISPLAY_NAMES_TR",
     "CLASS_NAMES",
     "DEFAULT_CONF",
     "DEFAULT_IOU_NMS",
     "IMGSZ",
     "LETTERBOX_PAD",
+    "LOW_CONF_REVIEW_NOTE_TR",
+    "LOW_CONF_REVIEW_UPPER_BOUND",
     "META_PATH",
     "MODELS",
     "OPENVINO_MODEL_PATH",
@@ -69,8 +77,10 @@ __all__ = [
     "box_lb_to_orig",
     "box_orig_to_lb",
     "build_metrics_payload",
+    "compute_cam_box_metrics",
     "detect_openvino",
     "explain_layercam",
+    "explain_layercam_with_metrics",
     "get_repo_root",
     "letterbox_image",
     "load_meta",

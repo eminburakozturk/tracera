@@ -2,17 +2,21 @@ import * as React from "react";
 import {
   AlertTriangle,
   Camera,
+  CheckCircle2,
   Download,
   FileJson,
+  FileText,
   Flame,
   ImagePlus,
   Info,
   Play,
   RotateCcw,
   Upload,
+  XCircle,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { VAL_EXAMPLES, type ValExampleItem } from "../fixtures";
 import {
@@ -21,8 +25,17 @@ import {
 } from "../lib/download";
 import { getDownloadStats } from "../lib/downloadInfo";
 import { cn } from "../lib/utils";
+import {
+  getClassColor,
+  getClassDisplayName,
+  isLowConfidenceReview,
+  VERDICT_RULE_NOTE_EN,
+  VERDICT_RULE_NOTE_TR,
+} from "../lib/v11Rules";
 import { useAppStore } from "../store/useAppStore";
 import type { Detection } from "../types";
+import { LowConfidenceReviewBadge } from "./LowConfidenceReviewBadge";
+import { PrMiniChart } from "./PrMiniChart";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
@@ -34,12 +47,106 @@ import {
 } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 import { Slider } from "./ui/slider";
+import { fmtNum, fmtPct, fmtMs } from "../lib/format";
 
 interface DetectViewProps {
   onSelectExample: (example: ValExampleItem) => Promise<void>;
   onSelectFile: (file: File) => Promise<void>;
   onRunDetect: (confOverride?: number) => Promise<void>;
   onInspectDetection: (detId: number) => void;
+  onExportPdf?: () => Promise<void>;
+}
+
+function useDefectCropUrl(
+  imageUrl: string | undefined,
+  box: [number, number, number, number],
+  color: string,
+): string | null {
+  const [cropUrl, setCropUrl] = React.useState<string | null>(null);
+  const [x1, y1, x2, y2] = box;
+
+  React.useEffect(() => {
+    if (!imageUrl || typeof document === "undefined") {
+      setCropUrl(null);
+      return;
+    }
+    let active = true;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (!active) return;
+      try {
+        const bw = Math.max(8, x2 - x1);
+        const bh = Math.max(8, y2 - y1);
+        const pad = Math.max(24, Math.round(Math.max(bw, bh) * 0.45));
+        const sx = Math.max(0, Math.floor(x1 - pad));
+        const sy = Math.max(0, Math.floor(y1 - pad));
+        const sw = Math.min(img.naturalWidth - sx, Math.ceil(bw + pad * 2));
+        const sh = Math.min(img.naturalHeight - sy, Math.ceil(bh + pad * 2));
+        if (sw <= 0 || sh <= 0) return;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = 96;
+        canvas.height = 96;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 96, 96);
+        // Kırpım içinde kusur kutusunu çiz
+        const rx = ((x1 - sx) / sw) * 96;
+        const ry = ((y1 - sy) / sh) * 96;
+        const rw = (bw / sw) * 96;
+        const rh = (bh / sh) * 96;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, rw, rh);
+        setCropUrl(canvas.toDataURL("image/jpeg", 0.85));
+      } catch {
+        setCropUrl(null);
+      }
+    };
+    img.onerror = () => {
+      if (active) setCropUrl(null);
+    };
+    img.src = imageUrl;
+    return () => {
+      active = false;
+    };
+  }, [imageUrl, x1, y1, x2, y2, color]);
+
+  return cropUrl;
+}
+
+function DefectCardThumb({
+  imageUrl,
+  det,
+  color,
+  sharedLayoutId,
+}: {
+  imageUrl: string | undefined;
+  det: Detection;
+  color: string;
+  sharedLayoutId?: string;
+}) {
+  const cropUrl = useDefectCropUrl(imageUrl, det.box, color);
+  return (
+    <motion.div
+      layoutId={sharedLayoutId}
+      className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-canvas)]"
+    >
+      {cropUrl ? (
+        <img
+          src={cropUrl}
+          alt={det.cls}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span
+          className="h-3.5 w-3.5 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      )}
+    </motion.div>
+  );
 }
 
 export function DetectView({
@@ -47,11 +154,14 @@ export function DetectView({
   onSelectFile,
   onRunDetect,
   onInspectDetection,
+  onExportPdf,
 }: DetectViewProps) {
   const { t } = useTranslation();
+  const prefersReducedMotion = useReducedMotion();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
 
+  const lang = useAppStore((s) => s.lang);
   const meta = useAppStore((s) => s.meta);
   const backendChoice = useAppStore((s) => s.backendChoice);
   const selectedImage = useAppStore((s) => s.selectedImage);
@@ -71,9 +181,10 @@ export function DetectView({
   const [hoveredId, setHoveredId] = React.useState<number | null>(null);
   const [zoom, setZoom] = React.useState(1);
   const [pan, setPan] = React.useState({ x: 0, y: 0 });
-  const [panStart, setPanStart] = React.useState<{ x: number; y: number } | null>(
-    null,
-  );
+  const [panStart, setPanStart] = React.useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   React.useEffect(() => {
     setZoom(1);
@@ -81,8 +192,11 @@ export function DetectView({
   }, [selectedImage?.url]);
 
   const allDetections = React.useMemo(
-    () => detectResult?.detections ?? [],
-    [detectResult],
+    () =>
+      (detectResult?.detections ?? []).filter(
+        (d) => d.conf >= confThreshold,
+      ),
+    [detectResult, confThreshold],
   );
   const filteredDetections = React.useMemo(() => {
     if (classFilter === "all") return allDetections;
@@ -96,6 +210,16 @@ export function DetectView({
     }
     return counts;
   }, [allDetections]);
+
+  const selectedDet = React.useMemo(
+    () =>
+      filteredDetections.find((d) => d.id === selectedDetectionId) ??
+      allDetections.find((d) => d.id === selectedDetectionId) ??
+      null,
+    [allDetections, filteredDetections, selectedDetectionId],
+  );
+
+  const isPass = allDetections.length === 0;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -115,7 +239,7 @@ export function DetectView({
   };
 
   const renderBox = (det: Detection) => {
-    const color = meta.colors[det.cls_id] ?? "#38bdf8";
+    const color = meta.colors[det.cls_id] ?? getClassColor(det.cls);
     const [x1, y1, x2, y2] = det.box;
     const width = Math.max(1, x2 - x1);
     const height = Math.max(1, y2 - y1);
@@ -124,7 +248,7 @@ export function DetectView({
     const imgWidth = detectResult?.width ?? 3056;
     const strokeW = Math.max(3, Math.round(imgWidth / 420));
     const fontSize = Math.max(18, Math.round(imgWidth / 75));
-    const labelText = `${det.cls} ${(det.conf * 100).toFixed(1)}%`;
+    const labelText = `${getClassDisplayName(det.cls, lang, true)} ${fmtPct(det.conf, 1)}`;
     const pillW = Math.max(120, labelText.length * fontSize * 0.58 + 16);
     const pillH = fontSize + 10;
     const labelY = y1 - pillH - 2 >= 0 ? y1 - pillH - 2 : y1 + 2;
@@ -134,7 +258,7 @@ export function DetectView({
         key={det.id}
         role="button"
         tabIndex={0}
-        aria-label={`${det.cls} ${(det.conf * 100).toFixed(1)}%`}
+        aria-label={`${getClassDisplayName(det.cls, lang)} ${fmtPct(det.conf, 1)}`}
         data-testid={`bbox-${det.id}`}
         style={{ pointerEvents: "all" }}
         className="cursor-pointer focus:outline-none"
@@ -175,7 +299,7 @@ export function DetectView({
           fill="#06131f"
           fontSize={fontSize}
           fontWeight={700}
-          fontFamily="IBM Plex Mono, monospace"
+          fontFamily="JetBrains Mono, IBM Plex Mono, monospace"
         >
           {labelText}
         </text>
@@ -185,6 +309,52 @@ export function DetectView({
 
   return (
     <div className="space-y-5">
+      {/* GEÇTİ / KALDI Bandı (kural notu docs/UI_V11_RULES.md'den) */}
+      {detectResult && (
+        <div
+          data-testid="verdict-banner"
+          className={cn(
+            "flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3",
+            isPass
+              ? "border-emerald-600/40 bg-emerald-500/10 text-[var(--text-primary)]"
+              : "border-rose-600/40 bg-rose-500/10 text-[var(--text-primary)]",
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              variant={isPass ? "success" : "danger"}
+              data-testid="verdict-badge"
+              className="px-3 py-1 font-mono text-xs font-bold tracking-wider"
+            >
+              {isPass ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : (
+                <XCircle className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {isPass ? t("detect.verdictPass") : t("detect.verdictFail")}
+              </span>
+            </Badge>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-primary)]">
+                {isPass
+                  ? t("detect.verdictPassDesc")
+                  : t("detect.verdictFailDesc", { count: allDetections.length })}
+              </p>
+              <p
+                data-testid="verdict-rule-note"
+                className="text-[11px] text-[var(--text-secondary)]"
+              >
+                {lang === "en" ? VERDICT_RULE_NOTE_EN : VERDICT_RULE_NOTE_TR}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-xs text-[var(--text-secondary)] tabular-nums">
+            <span>{lang === "en" ? "Conf" : "Güven"} ≥ {fmtNum(confThreshold, 3)}</span>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
         <div className="space-y-4 lg:col-span-8">
           <Card>
@@ -196,9 +366,15 @@ export function DetectView({
                 </div>
                 {detectResult && (
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="default" className="font-mono tabular-nums" data-testid="timing-badge">
-                      {t("detect.modelTime")}: {detectResult.timing.model_ms.toFixed(1)} ms ·{" "}
-                      {t("detect.totalTime")}: {detectResult.timing.total_ms.toFixed(1)} ms
+                    <Badge
+                      variant="default"
+                      className="font-mono tabular-nums"
+                      data-testid="timing-badge"
+                    >
+                      {t("detect.modelTime")}:{" "}
+                      {fmtMs(detectResult.timing.model_ms, 1)} ·{" "}
+                      {t("detect.totalTime")}:{" "}
+                      {fmtMs(detectResult.timing.total_ms, 1)}
                     </Badge>
                     <Badge variant="secondary" className="font-mono">
                       {detectResult.backend}
@@ -218,7 +394,9 @@ export function DetectView({
                     className="flex items-center gap-2 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 py-2 text-xs text-sky-900 dark:text-sky-200"
                   >
                     <Info className="h-4 w-4 shrink-0 text-[var(--accent)]" />
-                    <span>{t("detect.modelDownloadNotice", getDownloadStats())}</span>
+                    <span>
+                      {t("detect.modelDownloadNotice", getDownloadStats())}
+                    </span>
                   </div>
                 )}
 
@@ -239,7 +417,9 @@ export function DetectView({
                     <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg-subtle)]">
                       <div
                         className="h-full bg-[var(--accent)] transition-all"
-                        style={{ width: `${Math.min(100, Math.max(0, ortProgress.percent))}%` }}
+                        style={{
+                          width: `${Math.min(100, Math.max(0, ortProgress.percent))}%`,
+                        }}
                       />
                     </div>
                   </div>
@@ -281,7 +461,7 @@ export function DetectView({
                 )}
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--bg-surface)] text-[var(--accent)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--bg-surface)] text-[var(--accent-ink)]">
                     <Upload className="h-4 w-4" />
                   </div>
                   <div>
@@ -388,7 +568,9 @@ export function DetectView({
                       type="button"
                       size="sm"
                       variant="secondary"
-                      onClick={() => setZoom((z) => Math.min(6, +(z * 1.25).toFixed(2)))}
+                      onClick={() =>
+                        setZoom((z) => Math.min(6, +(z * 1.25).toFixed(2)))
+                      }
                       aria-label={t("detect.zoomIn")}
                     >
                       <ZoomIn className="h-3.5 w-3.5" />
@@ -397,7 +579,9 @@ export function DetectView({
                       type="button"
                       size="sm"
                       variant="secondary"
-                      onClick={() => setZoom((z) => Math.max(1, +(z / 1.25).toFixed(2)))}
+                      onClick={() =>
+                        setZoom((z) => Math.max(1, +(z / 1.25).toFixed(2)))
+                      }
                       aria-label={t("detect.zoomOut")}
                     >
                       <ZoomOut className="h-3.5 w-3.5" />
@@ -421,6 +605,18 @@ export function DetectView({
 
                   {detectResult && selectedImage && (
                     <div className="flex flex-wrap items-center gap-2">
+                      {onExportPdf && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          data-testid="download-pdf-btn"
+                          onClick={() => void onExportPdf()}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          <span>{t("detect.downloadReportPdf")}</span>
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         size="sm"
@@ -457,11 +653,71 @@ export function DetectView({
                   )}
                 </div>
 
+                {/* Seçili kusur için ortak öğe (shared layoutId) önizleme çubuğu */}
+                {selectedDet && selectedImage && (
+                  <div
+                    data-testid="selected-defect-spotlight"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-3 py-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      <DefectCardThumb
+                        imageUrl={selectedImage.url}
+                        det={selectedDet}
+                        color={
+                          meta.colors[selectedDet.cls_id] ??
+                          getClassColor(selectedDet.cls)
+                        }
+                        sharedLayoutId={
+                          !prefersReducedMotion
+                            ? `defect-shared-${selectedDet.id}`
+                            : undefined
+                        }
+                      />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs font-semibold text-[var(--text-primary)]">
+                            #{selectedDet.id} ·{" "}
+                            {getClassDisplayName(selectedDet.cls, lang)} (
+                            {fmtPct(selectedDet.conf, 1)})
+                          </p>
+                          {isLowConfidenceReview(
+                            selectedDet.conf,
+                            confThreshold,
+                          ) && (
+                            <LowConfidenceReviewBadge
+                              idSuffix={`selected-${selectedDet.id}`}
+                              lang={lang}
+                              badgeTestId="selected-low-conf-badge"
+                              infoBtnTestId="selected-low-conf-info-btn"
+                              popoverTestId="selected-low-conf-popover"
+                            />
+                          )}
+                        </div>
+                        <p className="font-mono text-[11px] text-[var(--text-secondary)] tabular-nums">
+                          [{selectedDet.box.map((v) => Math.round(v)).join(", ")}]
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => onInspectDetection(selectedDet.id)}
+                    >
+                      <Flame className="h-3.5 w-3.5 text-[var(--accent-ink)]" />
+                      <span>{t("detect.inspectHeatmap")}</span>
+                    </Button>
+                  </div>
+                )}
+
                 <div
                   className="relative min-h-[260px] overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-canvas)]"
                   onMouseDown={(e) => {
                     if (zoom <= 1) return;
-                    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+                    setPanStart({
+                      x: e.clientX - pan.x,
+                      y: e.clientY - pan.y,
+                    });
                   }}
                   onMouseMove={(e) => {
                     if (!panStart) return;
@@ -491,7 +747,9 @@ export function DetectView({
                       style={{
                         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                         transformOrigin: "center center",
-                        transition: panStart ? "none" : "transform 120ms ease-out",
+                        transition: panStart
+                          ? "none"
+                          : "transform 120ms ease-out",
                       }}
                     >
                       <img
@@ -527,8 +785,11 @@ export function DetectView({
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-lg font-semibold text-[var(--accent)] tabular-nums" data-testid="conf-value">
-                    {confThreshold.toFixed(3)}
+                  <span
+                    className="font-mono text-lg font-semibold text-[var(--accent-ink)] tabular-nums"
+                    data-testid="conf-value"
+                  >
+                    {fmtNum(confThreshold, 3)}
                   </span>
                   {Math.abs(confThreshold - meta.conf) > 0.001 && (
                     <Button
@@ -542,7 +803,7 @@ export function DetectView({
                         }
                       }}
                     >
-                      {t("detect.resetLocked")} ({meta.conf.toFixed(3)})
+                      {t("detect.resetLocked")} ({fmtNum(meta.conf, 3)})
                     </Button>
                   )}
                 </div>
@@ -560,6 +821,8 @@ export function DetectView({
                   aria-label={t("detect.confLabel")}
                 />
               </div>
+
+              <PrMiniChart confThreshold={confThreshold} />
 
               <Button
                 type="button"
@@ -580,7 +843,11 @@ export function DetectView({
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle>{t("detect.detectionsTitle")}</CardTitle>
-                <Badge variant="default" className="font-mono tabular-nums" data-testid="det-count-badge">
+                <Badge
+                  variant="default"
+                  className="font-mono tabular-nums"
+                  data-testid="det-count-badge"
+                >
                   {filteredDetections.length}
                 </Badge>
               </div>
@@ -591,11 +858,15 @@ export function DetectView({
             </CardHeader>
 
             <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("detect.filterLabel")}>
+              <div
+                className="flex flex-wrap gap-1.5"
+                role="group"
+                aria-label={t("detect.filterLabel")}
+              >
                 <button
                   type="button"
                   onClick={() => setClassFilter("all")}
-                    className={cn(
+                  className={cn(
                     "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer",
                     classFilter === "all"
                       ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-ink)]"
@@ -607,7 +878,7 @@ export function DetectView({
                 {meta.classes.map((cls, idx) => {
                   const count = classCounts[cls] ?? 0;
                   if (count === 0 && classFilter !== cls) return null;
-                  const color = meta.colors[idx] ?? "#38bdf8";
+                  const color = meta.colors[idx] ?? getClassColor(cls);
                   return (
                     <button
                       key={cls}
@@ -624,7 +895,7 @@ export function DetectView({
                         className="h-2 w-2 rounded-full"
                         style={{ backgroundColor: color }}
                       />
-                      <span>{cls}</span>
+                      <span>{getClassDisplayName(cls, lang, true)}</span>
                       <span className="font-mono opacity-80">({count})</span>
                     </button>
                   );
@@ -638,7 +909,8 @@ export function DetectView({
               ) : (
                 <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
                   {filteredDetections.map((det) => {
-                    const color = meta.colors[det.cls_id] ?? "#38bdf8";
+                    const color =
+                      meta.colors[det.cls_id] ?? getClassColor(det.cls);
                     const selected = selectedDetectionId === det.id;
                     return (
                       <div
@@ -654,23 +926,53 @@ export function DetectView({
                             : "border-[var(--border-hairline)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
                         )}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: color }}
+                        <div className="flex items-start gap-3">
+                          {!selected && (
+                            <DefectCardThumb
+                              imageUrl={selectedImage?.url}
+                              det={det}
+                              color={color}
+                              sharedLayoutId={
+                                !prefersReducedMotion
+                                  ? `defect-shared-${det.id}`
+                                  : undefined
+                              }
                             />
-                            <span className="text-sm font-semibold text-[var(--text-primary)]">
-                              {det.cls}
-                            </span>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                  style={{ backgroundColor: color }}
+                                />
+                                <span className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                                  {getClassDisplayName(det.cls, lang, true)}
+                                </span>
+                                <span className="truncate font-mono text-[11px] text-[var(--text-muted)]">
+                                  ({det.cls})
+                                </span>
+                              </div>
+                              <span className="font-mono text-xs font-semibold text-[var(--accent-ink)] tabular-nums">
+                                {fmtPct(det.conf, 1)}
+                              </span>
+                            </div>
+                            <p className="mt-1 font-mono text-[11px] text-[var(--text-muted)] tabular-nums">
+                              [{det.box.map((v) => Math.round(v)).join(", ")}]
+                            </p>
+                            {isLowConfidenceReview(det.conf, confThreshold) && (
+                              <div className="mt-1.5">
+                                <LowConfidenceReviewBadge
+                                  idSuffix={String(det.id)}
+                                  lang={lang}
+                                  badgeTestId={`low-conf-badge-${det.id}`}
+                                  infoBtnTestId={`low-conf-info-btn-${det.id}`}
+                                  popoverTestId={`low-conf-popover-${det.id}`}
+                                />
+                              </div>
+                            )}
                           </div>
-                          <span className="font-mono text-xs font-semibold text-[var(--accent)] tabular-nums">
-                            {(det.conf * 100).toFixed(1)}%
-                          </span>
                         </div>
-                        <p className="mt-1 font-mono text-[11px] text-[var(--text-muted)] tabular-nums">
-                          [{det.box.map((v) => Math.round(v)).join(", ")}]
-                        </p>
                         <div className="mt-2 flex justify-end">
                           <Button
                             type="button"
@@ -682,7 +984,7 @@ export function DetectView({
                               onInspectDetection(det.id);
                             }}
                           >
-                            <Flame className="h-3.5 w-3.5 text-[var(--accent)]" />
+                            <Flame className="h-3.5 w-3.5 text-[var(--accent-ink)]" />
                             <span>{t("detect.inspectHeatmap")}</span>
                           </Button>
                         </div>

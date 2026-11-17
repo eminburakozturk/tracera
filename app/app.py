@@ -52,10 +52,13 @@ RESULTS_DIR = (BASE_DIR / "results") if (BASE_DIR / "results").is_dir() else (RO
 
 from tracera_core import (  # noqa: E402
     CLASS_COLORS,
+    CLASS_DISPLAY_NAMES_TR,
     CLASS_NAMES,
     DEFAULT_CONF,
     DEFAULT_IOU_NMS,
     IMGSZ,
+    LOW_CONF_REVIEW_NOTE_TR,
+    LOW_CONF_REVIEW_UPPER_BOUND,
     MODELS,
     OPENVINO_MODEL_PATH,
     PYTORCH_MODEL_PATH,
@@ -65,7 +68,7 @@ from tracera_core import (  # noqa: E402
     MultiLayerYoloCAM,
     box_orig_to_lb,
     detect_openvino,
-    explain_layercam,
+    explain_layercam_with_metrics,
     letterbox_image,
     make_overlay_and_zoom,
 )
@@ -73,6 +76,15 @@ from tracera_core import (  # noqa: E402
 # -----------------------------------------------------------------------------
 # Dinamik Metrik Yükleyicileri
 # -----------------------------------------------------------------------------
+def _tr_num(value: float, digits: int) -> str:
+    """Arayüz metni için Türkçe ondalık (virgül). API yanıtları bunu kullanmaz."""
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
+def _tr_pct(fraction: float, digits: int = 1) -> str:
+    return f"%{_tr_num(fraction * 100.0, digits)}"
+
+
 def load_dynamic_metrics_markdown() -> str:
     """results/*.csv dosyalarından güncel ve doğrulanmış metrikleri dinamik çeker."""
     op_path = RESULTS_DIR / "operating_point.csv"
@@ -101,7 +113,7 @@ def load_dynamic_metrics_markdown() -> str:
                 loc_fp = int(row.get("konum_hatası_FP", 0))
                 fn = int(row.get("FN", 0))
                 md_lines.append(
-                    f"| **{split_name}** | {conf:.3f} | {p*100:.1f}% | {r*100:.1f}% | **{f1*100:.1f}%** | "
+                    f"| **{split_name}** | {_tr_num(conf, 3)} | {_tr_pct(p)} | {_tr_pct(r)} | **{_tr_pct(f1)}** | "
                     f"{tp} | {fp} | {bg_fp} | {loc_fp} | {fn} |"
                 )
             md_lines.append("")
@@ -153,7 +165,13 @@ def run_pcb_detection(
 ) -> tuple[np.ndarray | None, pd.DataFrame, list[str], dict, str]:
     """Girdi görüntüsü üzerinde nesne tespiti yapar, kutuları çizer ve tablo döner."""
     if input_img is None:
-        return None, pd.DataFrame(), [], {}, "Lütfen bir PCB görüntüsü yükleyin veya örneklerden seçin."
+        return (
+            None,
+            pd.DataFrame(columns=["#", "Hata Sınıfı", "Güven", "x1", "y1", "x2", "y2", "Not"]),
+            [],
+            {},
+            "Lütfen bir PCB görüntüsü yükleyin veya örneklerden seçin.",
+        )
 
     detector, engine_name = MODELS.get_detector()
 
@@ -185,18 +203,23 @@ def run_pcb_detection(
         for i, (xyxy, conf_val, cls_id) in enumerate(zip(xyxy_arr, conf_arr, cls_arr)):
             x1, y1, x2, y2 = xyxy.tolist()
             cls_name = CLASS_NAMES.get(cls_id, f"class_{cls_id}")
+            cls_tr = CLASS_DISPLAY_NAMES_TR.get(cls_name, cls_name)
             color = CLASS_COLORS.get(cls_id, (0, 255, 0))
+            conf_f = float(conf_val)
+            note_tr = LOW_CONF_REVIEW_NOTE_TR if conf_f < LOW_CONF_REVIEW_UPPER_BOUND else ""
 
             det_item = {
                 "idx": i,
                 "class_id": int(cls_id),
                 "class_name": cls_name,
-                "conf": float(conf_val),
+                "class_name_tr": cls_tr,
+                "conf": conf_f,
                 "box": [float(x1), float(y1), float(x2), float(y2)],
+                "note": note_tr,
             }
             detections_list.append(det_item)
 
-            choice_label = f"#{i} — {cls_name} (Güven: {conf_val:.3f}) @ [{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}]"
+            choice_label = f"#{i} — {cls_tr} (Güven: {_tr_num(float(conf_val), 3)}) @ [{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}]"
             dropdown_choices.append(choice_label)
 
             # Görsel üzerine kutu ve etiket çizimi
@@ -232,17 +255,18 @@ def run_pcb_detection(
         df_display = pd.DataFrame([
             {
                 "#": d["idx"],
-                "Hata Sınıfı": d["class_name"],
+                "Hata Sınıfı": d["class_name_tr"],
                 "Güven": round(d["conf"], 4),
                 "x1": int(round(d["box"][0])),
                 "y1": int(round(d["box"][1])),
                 "x2": int(round(d["box"][2])),
                 "y2": int(round(d["box"][3])),
+                "Not": d["note"],
             }
             for d in detections_list
         ])
     else:
-        df_display = pd.DataFrame(columns=["#", "Hata Sınıfı", "Güven", "x1", "y1", "x2", "y2"])
+        df_display = pd.DataFrame(columns=["#", "Hata Sınıfı", "Güven", "x1", "y1", "x2", "y2", "Not"])
 
     status_str = (
         f"✅ **Tespit Tamamlandı:** {len(detections_list)} kusur tespit edildi | "
@@ -282,46 +306,29 @@ def run_explainability(
     img_rgb = state_data["img_rgb"]
     img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
 
-    t0 = time.perf_counter()
-    cam_engine = MODELS.get_cam_engine()
-
-    lb = letterbox_image(img_bgr, imgsz=IMGSZ)
-    tensor_x = torch.from_numpy(lb.img_lb).permute(2, 0, 1).float().unsqueeze(0) / 255.0
-
-    raw_out, anchor_xyxy = cam_engine.forward_image(tensor_x)
-
     box_orig = tuple(det["box"])
-    box_lb = box_orig_to_lb(box_orig, lb)
-    best_anchor = cam_engine.find_best_anchor(box_lb, anchor_xyxy)
-
-    extracted = cam_engine.backward_and_extract(
-        raw_out=raw_out,
-        anchor_idx=best_anchor,
-        class_id=det["class_id"],
-        lb=lb,
-        methods=("layercam",),
-    )
-
-    _win, cam_dict = extracted[4]
-    _cam_lb, cam_orig = cam_dict["layercam"]
-
     label_str = f"{det['class_name']} {det['conf']:.2f}"
     color_rgb = CLASS_COLORS.get(det["class_id"], (0, 255, 100))
 
-    overlay_rgb, zoom_crop_rgb = make_overlay_and_zoom(
+    overlay_rgb, zoom_crop_rgb, cam_timing, cam_metrics = explain_layercam_with_metrics(
         img_bgr=img_bgr,
-        cam_orig=cam_orig,
         box_orig=box_orig,
+        cls_id=int(det["class_id"]),
+        imgsz=IMGSZ,
         label_str=label_str,
         box_color_rgb=color_rgb,
+        manager=MODELS,
     )
 
-    cam_latency_ms = (time.perf_counter() - t0) * 1000.0
+    cls_tr = det.get("class_name_tr") or CLASS_DISPLAY_NAMES_TR.get(det["class_name"], det["class_name"])
+    energy_pct = float(cam_metrics["energy_in_box"]) * 100.0
+    peak_loc = "kutunun içinde" if bool(cam_metrics["peak_in_box"]) else "kutunun dışında"
 
     info_str = (
-        f"🎯 **Açıklama Üretildi:** #{idx} {det['class_name']} (Güven: {det['conf']:.3f}) | "
+        f"🎯 **Açıklama Üretildi:** #{idx} {cls_tr} (Güven: {_tr_num(float(det['conf']), 3)}) | "
         f"**Yöntem:** LayerCAM @ Katman 4 (Backbone Stride 8) | "
-        f"**Süre:** {cam_latency_ms:.1f} ms (PyTorch CPU)"
+        f"**Süre:** {cam_timing.total_ms:.1f} ms (PyTorch CPU)\n\n"
+        f"Isı haritası enerjisinin kutu içindeki payı: %{_tr_num(energy_pct, 1)}; en sıcak nokta {peak_loc}."
     )
 
     return overlay_rgb, zoom_crop_rgb, info_str
@@ -370,7 +377,7 @@ def build_app() -> gr.Blocks:
                 status_box = gr.Markdown("Görüntü yükleyin ve **Kusurları Tespit Et** butonuna basın.")
                 annotated_output = gr.Image(label="Tespit Edilen Kusurlar (Bounding Boxes)", type="numpy")
                 table_output = gr.Dataframe(
-                    headers=["#", "Hata Sınıfı", "Güven", "x1", "y1", "x2", "y2"],
+                    headers=["#", "Hata Sınıfı", "Güven", "x1", "y1", "x2", "y2", "Not"],
                     label="Tespit Listesi",
                     interactive=False,
                 )
@@ -492,14 +499,14 @@ def detect_api(image: FileData, conf: float = DEFAULT_CONF) -> dict[str, Any]:
 
 
 def explain_api(image: FileData, box: str, cls_id: int) -> dict[str, Any]:
-    """CONTRACT §2 ExplainResult JSON döndüren arayüzsüz Gradio API ucu (LayerCAM @ katman 4)."""
+    """CONTRACT §2 ve §7 ExplainResult JSON döndüren arayüzsüz Gradio API ucu (LayerCAM @ katman 4)."""
     cls_int = int(cls_id)
     if cls_int not in CLASS_NAMES:
         raise gr.Error(f"Geçersiz cls_id={cls_int}; beklenen aralık: 0..{len(CLASS_NAMES) - 1}.")
     img_bgr = _decode_api_image_bgr(image)
     h, w = img_bgr.shape[:2]
     box_orig = _parse_api_box(box, img_w=w, img_h=h)
-    overlay_rgb, zoom_rgb, timing = explain_layercam(
+    overlay_rgb, zoom_rgb, timing, cam_metrics = explain_layercam_with_metrics(
         img_bgr=img_bgr,
         box_orig=box_orig,
         cls_id=cls_int,
@@ -512,6 +519,9 @@ def explain_api(image: FileData, box: str, cls_id: int) -> dict[str, Any]:
         method="layercam",
         layer=4,
         timing=timing,
+        energy_in_box=float(cam_metrics["energy_in_box"]),
+        peak_in_box=bool(cam_metrics["peak_in_box"]),
+        peak_xy=list(cam_metrics["peak_xy"]),
     ).model_dump()
 
 
