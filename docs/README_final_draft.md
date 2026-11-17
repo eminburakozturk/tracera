@@ -243,23 +243,23 @@ Aynı arayüz web, Windows ve Android'de çalışır; koyu/açık tema, Türkçe
 
 **Ana Sayfa**
 
-![Ana Sayfa](results/ui_v11/home_desktop_dark.png)
+![Ana Sayfa](results/readme/home_desktop_dark.png)
 
 **Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi**
 
-![Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi](results/ui_v11/detect_desktop_dark.png)
+![Muayene: GEÇTİ/KALDI, eşik ve PR eğrisi](results/readme/detect_desktop_dark.png)
 
 **Açıklama: LayerCAM ve "Bu karar nasıl verildi?"**
 
-![Açıklama: LayerCAM ve "Bu karar nasıl verildi?"](results/ui_v11/explain_desktop_dark.png)
+![Açıklama: LayerCAM ve "Bu karar nasıl verildi?"](results/readme/explain_desktop_dark.png)
 
 **Sonuçlar (açık tema)**
 
-![Sonuçlar (açık tema)](results/ui_v11/results_desktop_light.png)
+![Sonuçlar (açık tema)](results/readme/results_desktop_light.png)
 
 | Muayene (mobil) | Açıklama (mobil, açık) | Kusur Rehberi (mobil) |
 |---|---|---|
-| <img src="results/ui_v11/detect_mobile_dark.png" width="240" alt="Muayene (mobil)"> | <img src="results/ui_v11/explain_mobile_light.png" width="240" alt="Açıklama (mobil, açık)"> | <img src="results/ui_v11/guide_mobile_dark.png" width="240" alt="Kusur Rehberi (mobil)"> |
+| <img src="results/readme/detect_mobile_dark.png" width="240" alt="Muayene (mobil)"> | <img src="results/readme/explain_mobile_light.png" width="240" alt="Açıklama (mobil, açık)"> | <img src="results/readme/guide_mobile_dark.png" width="240" alt="Kusur Rehberi (mobil)"> |
 
 Güveni `0.6`'nın altındaki tespitler arayüzde *"Düşük güven: gözden geçirin"* etiketi alır (Bölüm 4'teki güven aralığı tablosuna dayanan, test sonrası eklenmiş kullanılabilirlik özelliği).
 

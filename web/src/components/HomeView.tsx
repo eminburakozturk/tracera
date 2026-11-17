@@ -107,7 +107,7 @@ export function HomeView({
                 YOLO11s · 1024×1024 · LayerCAM L4
               </Badge>
               <Badge variant="secondary" className="font-mono">
-                Conf = 0.395
+                {lang === "en" ? "Conf" : "Eşik"} = {fmtNum(0.395, 3)}
               </Badge>
             </div>
             <CardTitle className="mt-2 text-xl sm:text-2xl">

@@ -7,7 +7,11 @@ import { expect, test } from "@playwright/test";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_SPACE_DIR = path.resolve(__dirname, "../../web_space");
 const REPO_ROOT = path.resolve(__dirname, "../../..");
-const FPS_CSV_PATH = path.join(REPO_ROOT, "results", "web_video_fps.csv");
+// Resmi sonuç dosyasına yalnız TRACERA_WRITE_RESULTS=1 iken yazılır; aksi halde test-results/ altına.
+const FPS_CSV_PATH =
+  process.env.TRACERA_WRITE_RESULTS === "1"
+    ? path.join(REPO_ROOT, "results", "web_video_fps.csv")
+    : path.join(REPO_ROOT, "web", "test-results", "web_video_fps.csv");
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -277,6 +281,7 @@ test.describe("Adım 5 — Canlı Video Modu (WebGPU & WASM) + Hata Analizi Gale
         ].join(","),
       ),
     ];
+    fs.mkdirSync(path.dirname(FPS_CSV_PATH), { recursive: true });
     fs.writeFileSync(FPS_CSV_PATH, `${csvLines.join("\n")}\n`, "utf-8");
   });
 });
