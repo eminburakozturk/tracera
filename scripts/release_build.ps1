@@ -544,7 +544,7 @@ print(f"health.version={health['version']}, energy_in_box={e_val:.4f}, peak_in_b
     }
 } -MeasureArtifact {
     $Item = Get-Item -LiteralPath $SetupExePath
-    "``$($Item.Name)``: $(Format-Size $Item.Length) (`$script:SidecarVerifySummary`)"
+    "``$($Item.Name)``: $(Format-Size $Item.Length) ($($script:SidecarVerifySummary))"
 }
 
 # (e) Tauri Android APK (arm64)

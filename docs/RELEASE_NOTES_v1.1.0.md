@@ -1,16 +1,14 @@
 # Tracera v1.1.0 Sürüm Notları
 
-> **TASLAK (Claude, 2026-11-14).** `⟨…⟩` ile işaretli alanlar `scripts/release_build.ps1` çıktısından (`dist_release/SHA256SUMS.txt`, `results/release_build_log.md`) doldurulacak. Doldurulmadan yayınlanmaz.
-
-v1.1.0 arayüz sürümüdür: **model, eşik ve raporlanan metrikler v1.0.0 ile aynıdır** (model sürümü `1.0.0`, ONNX SHA-256 `aa8e1f42702c823426df778c9ff298293e8661010dce1d410ea89b6caccbb58c`, güven eşiği `0,395`). Değişen şey uygulamanın kendisi ve açıklama katmanıdır.
+v1.1.0 arayüz sürümüdür (derleme: `main` @ `76cd832`): **model, eşik ve raporlanan metrikler v1.0.0 ile aynıdır** (model sürümü `1.0.0`, ONNX SHA-256 `aa8e1f42702c823426df778c9ff298293e8661010dce1d410ea89b6caccbb58c`, güven eşiği `0,395`). Değişen şey uygulamanın kendisi ve açıklama katmanıdır.
 
 ## 1. Sürüm Paketi İçeriği
 
 | Dosya | Platform | Boyut | SHA-256 |
 |---|---|---:|---|
-| `Tracera_1.1.0_x64-setup.exe` | Windows (`x86_64`) | ⟨MiB (bayt)⟩ | `⟨sha256⟩` |
-| `Tracera_1.1.0_android_arm64.apk` | Android (`arm64-v8a`) | ⟨MiB (bayt)⟩ | `⟨sha256⟩` |
-| `SHA256SUMS.txt` | Tümü | ⟨bayt⟩ | — |
+| `Tracera_1.1.0_x64-setup.exe` | Windows (`x86_64`) | 316.24 MiB (331,600,758 bayt) | `2be6699d8854b3841c4b8abe56cab96ff5e6f7f0edac896b35e611802da39634` |
+| `Tracera_1.1.0_android_arm64.apk` | Android (`arm64-v8a`) | 59.29 MiB (62,170,347 bayt) | `9b5b2f9be721c60fc34be61f77244ff2aacb9ec340113494079279b01070f469` |
+| `SHA256SUMS.txt` | Tümü | 194 bayt | — |
 
 ```powershell
 Get-FileHash .\Tracera_1.1.0_x64-setup.exe, .\Tracera_1.1.0_android_arm64.apk -Algorithm SHA256
