@@ -239,10 +239,10 @@ test.describe("Adım 5 — Canlı Video Modu (WebGPU & WASM) + Hata Analizi Gale
         await expect(page.getByTestId("fp-total-test")).toContainText("142");
         await expect(page.getByTestId("fp-total-val")).toContainText("16");
         await expect(page.getByTestId("template-spot-mouse_bite")).toContainText(
-          "Evet (0.5569)",
+          "Evet (0,5569)",
         );
         await expect(page.getByTestId("template-spot-spur")).toContainText(
-          "Hayır (<0.395)",
+          "Hayır (<0,395)",
         );
         await expect(page.getByTestId("quant-parity-table")).toContainText("0,395");
         await expect(page.getByTestId("device-bench-btn")).toContainText(

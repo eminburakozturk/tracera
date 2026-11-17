@@ -84,6 +84,10 @@ test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM
     const page = await context.newPage();
 
     await page.goto(`${staticBaseUrl}/?ep=webgpu`);
+
+    // v1.1: uygulama Ana Sayfa'da açılır → Muayene sekmesine geç
+
+    await page.getByTestId("tab-detect").click();
     const isolated = await page.evaluate(() => window.crossOriginIsolated);
     expect(isolated).toBe(false);
 
@@ -112,6 +116,10 @@ test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM
     page.on("request", (req) => networkUrls.push(req.url()));
 
     await page.goto(`${staticBaseUrl}/?ep=wasm`);
+
+    // v1.1: uygulama Ana Sayfa'da açılır → Muayene sekmesine geç
+
+    await page.getByTestId("tab-detect").click();
     expect(await page.evaluate(() => window.crossOriginIsolated)).toBe(false);
 
     // SW kurulumunun tamamlanmasını bekle (yalnız uygulama kabuğu precache edilmeli)
@@ -187,6 +195,8 @@ test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM
     });
 
     await page.reload({ waitUntil: "domcontentloaded" });
+
+    await page.getByTestId("tab-detect").click();
     await page.waitForSelector('[data-testid^="bbox-"]', { timeout: 60_000 });
     await expect(page.getByText("ort-wasm")).toBeVisible();
     await expect(page.getByTestId("model-download-notice")).not.toBeVisible();
@@ -215,6 +225,10 @@ test.describe("Adım 4 — PWA Önbellek Stratejisi, Statik Paket ve WebGPU/WASM
     await page.route("http://127.0.0.1:8765/**", (route) => route.abort("failed"));
 
     await page.goto(`${staticBaseUrl}/?ep=wasm`);
+
+    // v1.1: uygulama Ana Sayfa'da açılır → Muayene sekmesine geç
+
+    await page.getByTestId("tab-detect").click();
     await expect(page.getByTestId("run-detect-btn")).toBeEnabled({ timeout: 15_000 });
     await page.getByTestId("run-detect-btn").click();
     await page.waitForSelector('[data-testid="bbox-0"]', { timeout: 60_000 });

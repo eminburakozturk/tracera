@@ -14,6 +14,7 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
   const desktopPage = await desktopCtx.newPage();
   await desktopPage.goto("/");
+  await desktopPage.getByTestId("tab-detect").click(); // v1.1: Ana Sayfa'dan Muayene'ye
   await expect(desktopPage.getByTestId("run-detect-btn")).toBeEnabled({
     timeout: 15_000,
   });
@@ -34,6 +35,7 @@ test("Adım 1 & Mobil WebView Uyumluluğu — Masaüstü (1440px) ve Mobil (390p
   });
   const mobilePage = await mobileCtx.newPage();
   await mobilePage.goto("/");
+  await mobilePage.getByTestId("mobile-tab-detect").click(); // v1.1: Ana Sayfa'dan Muayene'ye
   await expect(mobilePage.getByTestId("run-detect-btn")).toBeEnabled({
     timeout: 15_000,
   });
